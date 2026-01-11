@@ -41,7 +41,7 @@ Dans ce rapport, nous détaillons notre travail qui avait pour objectif de lisse
 
 \vspace{0.2cm}
 
-Notre jeu de données provient de capteurs dans un lac en région parisienne qui mesure la concentration en chlorophylle en microgrammes par litre (µg/L) ainsi que la concentration en cyanobactéries (µg/L). Ces dernières sont des micro-organismes photosynthétiques qui peuvent proliférer dans les eaux douces et former des blooms nuisibles pour l’environnement et la santé humaine.
+Notre jeu de données provient de capteurs dans un lac en région parisienne qui mesure la concentration en chlorophylle en microgrammes par litre (µg/L) ainsi que la concentration en cyanobactéries (µg/L). Ces dernières sont des micro-organismes photosynthétiques qui peuvent proliférer dans les eaux douces et former des blooms nuisibles pour l’environnement et la santé humaine. Il est important de préciser que les cyanobactéries sont des bactéries photosynthétiques qui possèdent de la chlorophylle.
 
 \vspace{0.2cm}
 
@@ -49,7 +49,7 @@ L’échantillonnage initial pour ces mesures est de 15 minutes, mais à cette g
 
 \vspace{0.2cm}
 
-Le long de ce travail, nous utiliserons le langage de programmation Julia (mettre la ref), qui permet les applications de calcul numérique et la visualisation graphique.
+Le long de ce travail, nous utiliserons le langage de programmation Julia (mettre la ref), qui permet les applications de calcul numérique et la visualisation graphique. Tout nos codes sont disponibles en opensource sur notre page Github via ce lien (mettre lien).
 
 # Visualisation des données
 
@@ -91,9 +91,203 @@ De plus, nous remarquons que la colonne de date est de type `String31`, e qui em
 # Préparation des dates et des horaires
 
 data.date = tryparse.(DateTime, data.date, dateformat"dd/mm/yyyy HH:MM")
-first(data, 5)
+
+println("Premières lignes :")
+display(first(data, 5))
+
+println("\nDernières lignes :")
+display(last(data, 5))
 
 ```
 
 Nous avons commencé par utiliser la fonction `DateTime` mais celle-ci ne fonctionnait pas car certaines lignes étaient mals formattées. Nous avons donc essayé une méthode plus robuste (fonction `tryparse`) qui transforme les dates incalides en `missing` plutôt que faire planter le code.
+
+\vspace{0.2cm}
+
+Nous cherchons maintenant à observer l'évolution temporelle de la concentration en chlorophylle à la résolution initiale de 15 minutes (sans transformation ni lissage). Puis celle de la concentration en cyanobactéries en fonction du temps.
+
+```{julia}
+
+# Visualisation graphique de la chlorophylle
+
+plot(
+data.date,
+data.Chl,
+xlabel = "Temps",
+ylabel = "Chlorophylle (µg/L)",
+title = "Évolution brute de la concentration en chlorophylle",
+legend = false
+)
+
+```
+
+```{julia}
+
+# Visualisation graphique de la cyanobactérie
+
+plot(
+data.date,
+data.Cyano,
+xlabel = "Temps",
+ylabel = "Cyanobactéries (µg/L)",
+title = "Évolution brute de la concentration en cyanobactéries",
+legend = false
+)
+
+```
+
+Nos figures représentent l'évolution brute de la concentration en chlorophylle et en cyanobactéries en fonction du temps (du 15 octobre 2022 au 31 août 2024). Elles mettent en évidence une forte variabilité temporelle, c'est-à-dire que, pour les deux variables, les valeurs sont généralement faubles mais ponctuées de pics importants, parfois très marqués, apparaissant de manière irrégulières au cours du temps.
+
+\vspace{0.2cm}
+
+Ces pics pourraient refléter des évènements biologiques réels mais pourraient également être dûes à des bruits de mesures des capteurs, à des variations lcoales du courant dans le lac ou encore à des artéfacts de mesure. Cette granularité de mesurfe trop fine (15 minutes) empêche de distinguer clairement les tendances biologiques réelles des variations aléatoires.
+
+\vspace{0.2cm}
+
+Par ailleurs, nous constatons que les profils temporels de la chlorophylle et des cyanobactéries présentent des similitudes, ce qui est cohérent du point de vue biologique puisque les cyanobactéries contiennent de la chlorophylle. Néanmoins, les pics de cyanobactérieues sont généralement moins élevés et moins fréquents que ceux de la chlorophylle totale.
+
+\vspace{0.2cm}
+
+Face à ces observations, il apparaît important de procéder à un lissage et une agrégation de données pour plusieurs raisons. Tout d'abord, pour réduire le bruit de mesure. En effet, les capteurs peuvent générer des fluctuations artificielles dûes à des soucis techniques. Le lissage pourrait permettre d'atténuer ces variations parasites qui ne reflètent pas la dynamique réelle des concentrations. Ensuite, pour mettre en évidence les tendances biolgiques. En effet, les processus biologiques tels que la croissance des cyanmybactéries ou la phyotosynthèse se déroulent sur des échelles de temps plus longues que 15 minutes. En regroupant les données par blocs de 1h15, nous nous plaçons à une échelle temporelle plus cohérente avec ces phénomènes biologiques, ce qui facilitera l'identification des évolution écologiques. De plus, pour réduire l'autocorrélation. En effet, à l'échelle de 15 minutes, les mesures successives sont très fortement corrélées entre elles, ce qui est contre les hypothèses de nombreux tests statistiques, car cela peut conduite à surestimer la significativité des résultats. L'agrégation par blocs de 1h&5 permet de réduire cette dépendance temporelle et d'obtenir des observations plus indépendantes. Pour finir, pour facilier l'analyse. En effet, un jeu de données moins volumineux et moins bruité est plus facile à manipuler, à visualiser et à analyser. Cela permet également de réduire les coûts de calcul pour les analyses ultérieures.
+
+\vspace{0.2cm}
+
+Le choxi spécifique d'une fenêtre de 1h15 semble représenter un bon compromis entre la conservation d'une résolution temporelle suffisante pour observer les dynamiques journalières et l'obtention d'une réduction signification du bruit et du volume de données.
+
+# Regroupement des données 
+
+Nous allons maintenant procéder à l'agrégation des données par blocs de 1h15 (75 minutes). Pour cela nous devons : 
+- Créer une nouvelle colonne qui attribue à chaque mesure un bloc temporel.
+- Regrouper les mesures appartenant au même bloc.
+- Calculer une statistique agrégée (moyenne ou médiane) pour chaque bloc.
+
+\vspace{0.2cm}
+
+La première étape consiste donc à procéder à l'agrégation des données. Comme nos mesures sont effectuées toutes les 15 minutes, chaque bloc contiendra exactement 5 mesures consécutives (5 x 15 min = 75 min). 
+
+```{julia}
+
+# Créer les numéros de blocs : 1,1,1,1,1, 2,2,2,2,2, 3,3,3,3,3, etc.
+n_lignes = nrow(data)
+data.bloc = repeat(1:ceil(Int, n_lignes/5), inner=5)[1:n_lignes]
+
+# Afficher les premières lignes pour vérifier
+first(data, 15)
+
+```
+
+Les dates confirment bien qu'il y a bien 15 minutes d'écart entre chaque mesure. Nous allons donc calculer la moyenen de la chlorophylle et des cyanobactéries pour chaque bloc de 1h15.
+
+```{julia}
+
+# Calculer les moyennes par bloc
+data_agregee = combine(groupby(data, :bloc),
+    :date => first => :date_debut,      # Date de début du bloc
+    :Chl => mean => :Chl_moyenne,       # Moyenne de la chlorophylle
+    :Cyano => mean => :Cyano_moyenne    # Moyenne des cyanobactéries
+)
+
+# Afficher les premières et dernières lignes
+println("Premières lignes agrégées :")
+display(first(data_agregee, 10))
+
+println("\nDernières lignes agrégées :")
+display(last(data_agregee, 10))
+
+```
+
+Nous remarquons, au-délà du fait que les agrégations ont bien fonctionnées, que la chlorophylle semble avoir fortement augmenté en fin de période (été 2024). En revanche, les syanobactéries restent relativements stables autour de 1-3 µg/L, même s'il semble y avoir une légère diminution.
+
+Afin de vérifier si la lissage a bien fonctionné et si les tendances sont plus claires, nous allons visualiser nos nouvelles données.
+
+```{julia}
+
+# Graphique de la chlorophylle agrégée
+plot(
+    data_agregee.date_debut,
+    data_agregee.Chl_moyenne,
+    xlabel = "Temps",
+    ylabel = "Chlorophylle moyenne (µg/L)",
+    title = "Évolution de la concentration en chlorophylle (agrégée par blocs de 1h15)",
+    legend = false,
+    linewidth = 2
+)
+
+```
+
+```{julia}
+
+# Graphique des cyanobactéries agrégées
+plot(
+    data_agregee.date_debut,
+    data_agregee.Cyano_moyenne,
+    xlabel = "Temps",
+    ylabel = "Cyanobactéries moyennes (µg/L)",
+    title = "Évolution de la concentration en cyanobactéries (agrégée par blocs de 1h15)",
+    legend = false,
+    linewidth = 2
+)
+```
+
+Il nous semble que les courbes ont bien été lissées. En effet, nous voyons que les concentrations maximales ont extrêmement dimunuées dans les deux cas (de 600 à 200 µg/L pour les chlorophylles et de 85 à 20 µg/L pour les cyanobactéries).
+ 
+\vspace{0.2cm}
+
+Pour mieux observer l'effet du lissage, nous superposons sur un même graphique les données brutes (mesures toutes les 15 minutes) et les données agrégées (blocs de 1h15).
+
+```{julia}
+
+# Comparaison pour la chlorophylle
+plot(
+    data.date,
+    data.Chl,
+    label = "Données brutes (15 min)",
+    xlabel = "Temps",
+    ylabel = "Chlorophylle (µg/L)",
+    title = "Comparaison : données brutes vs agrégées (Chlorophylle)",
+    alpha = 0.4,  # Transparence pour les données brutes
+    color = :blue
+)
+
+plot!(
+    data_agregee.date_debut,
+    data_agregee.Chl_moyenne,
+    label = "Données agrégées (1h15)",
+    linewidth = 2,
+    color = :darkred
+)
+```
+
+```{julia}
+
+# Comparaison pour les cyanobactéries
+plot(
+    data.date,
+    data.Cyano,
+    label = "Données brutes (15 min)",
+    xlabel = "Temps",
+    ylabel = "Cyanobactéries (µg/L)",
+    title = "Comparaison : données brutes vs agrégées (Cyanobactéries)",
+    alpha = 0.4,  # Transparence pour les données brutes
+    color = :green
+)
+
+plot!(
+    data_agregee.date_debut,
+    data_agregee.Cyano_moyenne,
+    label = "Données agrégées (1h15)",
+    linewidth = 2,
+    color = :darkred
+)
+```
+
+Ces graphiques mettent clairement en évidence l'effet du lissage par agrégation.
+
+\vspace{0.2cm}
+
+Pour la chlorophylle, les données brutes (en bleu) présentent une très forte variabilité avec des pics extrêmement marqués et de nombreuses fluctuations rapides. La courbe agrégée (en rouge foncé) suit la même tendance générale mais de manière beaucoup plus lisse et régulière. On observe que les pics importants sont conservés (début 2023, début 2024, etc.), mais leur amplitude est légèrement atténuée. Le lissage permet de distinguer plus clairement les périodes de forte concentration (blooms) des périodes calmes, sans être perturbé par le bruit de mesure.
+
+\vspace{0.2cm}
+
+Pour les cyanobactéries, le même phénomène s'observe avec la courbe verte (données brutes) présentant des pics très abrupts, notamment un pic majeur au printemps 2023 atteignant près de 90 µg/L, et plusieurs autres pics en 2024. La courbe agrégée (en rouge foncé) atténue ces variations tout en conservant l'information sur les événements de prolifération. On remarque que les cyanobactéries sont globalement à des niveaux faibles (< 5 µg/L) la majorité du temps, avec des blooms ponctuels et saisonniers.
 
