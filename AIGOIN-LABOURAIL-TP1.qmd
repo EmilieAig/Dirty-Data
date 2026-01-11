@@ -1,0 +1,99 @@
+---
+title: "TP n°1 : Cyanobactéries et Chlorophylle"
+subtitle: "HAX004X - Dirty Data"
+author: 
+    - name: AIGOIN Emilie
+    - name: LABOURAIL Célia
+date: today
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    title-block-banner: true
+    number-sections: true
+    code-fold: true
+    code-tools: true
+    code-copy: true
+    df-print: paged
+    embed-resources: false
+    highlight-style: github
+execute:
+  engine: jupyter
+  echo: true
+  warning: false
+  message: false
+  cache: false
+lang: fr
+---
+
+::: {layout-ncol=2}
+![](SSD.png){width=150px}
+
+![](Univ_Mtp.png){width=150px}
+:::
+
+# Introduction
+
+Dans ce rapport, nous détaillons notre travail qui avait pour objectif de lisser des données ainsi que de les agréger en blocs de temps d'une durée d'une heure et quart.
+
+\vspace{0.2cm}
+
+Notre jeu de données provient de capteurs dans un lac en région parisienne qui mesure la concentration en chlorophylle en microgrammes par litre (µg/L) ainsi que la concentration en cyanobactéries (µg/L). Ces dernières sont des micro-organismes photosynthétiques qui peuvent proliférer dans les eaux douces et former des blooms nuisibles pour l’environnement et la santé humaine.
+
+\vspace{0.2cm}
+
+L’échantillonnage initial pour ces mesures est de 15 minutes, mais à cette granularité l’évolution des concentrations est quasiment imperceptible. De plus, cela pourrait fausser les analyses statistiques en introduisant une forte autocorrélation entre les observations successives. En regroupant les données en blocs de 1h15, nous nous attendons à obtenir une vision plus claire des tendances et des variations des concentrations de chlorophylle et de cyanobactéries dans le lac.
+
+\vspace{0.2cm}
+
+Le long de ce travail, nous utiliserons le langage de programmation Julia (mettre la ref), qui permet les applications de calcul numérique et la visualisation graphique.
+
+# Visualisation des données
+
+Tout d'abord, afin de comprendre un peu mieux notre jeu de données, nous avons commencé par effectuer des visualisations. Pour cela, nous commençons par charger les bibliothèques nécessaires à la mnipulation des données, à la gestion des dates et à la visualisation.
+
+```{julia}
+
+# Importer les packages
+
+using CSV
+using DataFrames
+using Dates
+using Statistics
+using Plots
+
+```
+
+Les données sont ensuite importées dans un tableau (dataframe), ce qui va nous permettre une manipulation structurée de nos données.
+
+```{julia}
+
+# Importer les données
+
+data = CSV.read("data_chl_cyano.csv", DataFrame)
+first(data, 5)
+
+```
+
+Suite à l'importation de nos données sous forme d'un dataframe Julia et la visualisation des cinq premières lignes, nous observons trois variables principales : 
+
+- La date de mesure avec l'horaire associée (`date`).
+- La concentration en chlorophylle (`Chl`).
+- La concentratione n cyanobactéries (`Cyano`).
+
+De plus, nous remarquons que la colonne de date est de type `String31`, e qui empêche toute manipulation temporelle. Ainsi, nous convertissons cette colonne en format `DateTime` afin de permettre des opérations temporelles telles que l'agrégation ou la représentation graphique en fonction du temps.
+
+```{julia}
+
+# Préparation des dates et des horaires
+
+data.date = tryparse.(DateTime, data.date, dateformat"dd/mm/yyyy HH:MM")
+first(data, 5)
+
+```
+
+Nous avons commencé par utiliser la fonction `DateTime` mais celle-ci ne fonctionnait pas car certaines lignes étaient mals formattées. Nous avons donc essayé une méthode plus robuste (fonction `tryparse`) qui transforme les dates incalides en `missing` plutôt que faire planter le code.
+
