@@ -33,13 +33,15 @@ L'objectif principal est de traiter des données brutes échantillonnées toutes
   - `Dates` : Gestion des dates et horaires
   - `Statistics` : Calculs statistiques
   - `Plots` : Visualisation graphique
+  - `RollingFunctions` : Lissage par moyennes mobiles
 
 ## Structure du projet
 
 ```
 .
 ├── data_chl_cyano.csv          # Données brutes des capteurs
-├── rapport.qmd                 # Rapport Quarto (code + analyses)
+├── AIGOIN-LABOURAIL-TP1.qmd    # Rapport Quarto (code + analyses)
+├── AIGOIN-LABOURAIL-TP1.html   # Rapport html (code + analyses)
 ├── SSD.png                     # Logo SSD
 ├── Univ_Mtp.png                # Logo Université de Montpellier
 └── README.md                   # Ce fichier
@@ -56,7 +58,7 @@ L'objectif principal est de traiter des données brutes échantillonnées toutes
 
 ```julia
 using Pkg
-Pkg.add(["CSV", "DataFrames", "Dates", "Statistics", "Plots"])
+Pkg.add(["CSV", "DataFrames", "Dates", "Statistics", "Plots", "RollingFunctions"])
 ```
 
 ### Exécution
