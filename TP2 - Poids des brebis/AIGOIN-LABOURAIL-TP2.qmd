@@ -1,0 +1,89 @@
+---
+title: |
+  ![](SSD.png){width=120px style="float:left; margin-right:20px;"} 
+  ![](Univ_Mtp.png){width=120px style="float:right; margin-left:20px;"}
+  
+  <div style="text-align: center; clear: both; padding-top: 1rem; color: #6495ED;">
+  TP n°2 : Régression sur le poids des brebis
+  </div>
+subtitle: |
+  <div style="text-align: center; clear: both; padding-top: 1rem;">
+  HAX004X - Dirty Data
+  </div>
+author: 
+    - name: AIGOIN Emilie
+    - name: LABOURAIL Célia
+date: today
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: right
+    title-block-banner: true
+    number-sections: true
+    code-fold: true
+    code-tools: false
+    code-copy: true
+    df-print: paged
+    embed-resources: false
+    highlight-style: github
+execute:
+  engine: jupyter
+  echo: true
+  warning: false
+  message: false
+  cache: false
+lang: fr
+---
+
+<style>
+/* Titre principal */
+.quarto-title-block .quarto-title {
+  color: #6495ED !important;
+}
+
+/* Numéros de sections */
+.header-section-number {
+  color: #6495ED !important;
+}
+
+/* Traits horizontaux */
+hr {
+  border-color: #2563eb !important;
+  border-width: 2px !important;
+}
+
+/* Texte en justifié */
+body, p {
+  text-align: justify;
+  text-justify: inter-word;
+}
+</style>
+
+# Introduction
+
+***
+
+Ce rapport présente notre travail sur des données de pesée de brebis, effectuée par une machine équipée d'une balance connectée. L'objectif était d'affichern pour chaque brebis, une fonction à qui un temps $t$ associe le poids de la brebis au temps à l'aide d'une régression non linéaire.
+
+Notre jeu de données contient cependant de nombreuses erreurs (que nous verrons lors de la partie de visualisation) car la machine qui pèse les brebis ne peut pas vérifier la position de la brebis (peut ne pas être entièrement sur la balance et donc avoir un poids plus léger que réellement) ou encore le nombre de brebis présentent sur la balance (plusieurs brebis peuvent monter sur la balance et donc un poids élevé est enregistré sur une seule brebis).
+
+Le long de ce travail, nous utiliserons le langage de programmation [Julia](https://julialang.org/), qui permet les applications de calcul numérique et la visualisation graphique. Tout nos codes sont disponibles en opensource sur notre page Github via [ce lien](https://github.com/EmilieAig/Dirty-Data).
+
+# Visualisation des données
+
+Tout d'abord, afin de comprendre un peu mieux notre jeu de données, nous avons commencé par effectuer des visualisations. Pour cela, nous commençons par charger les bibliothèques nécessaires à la manipulation des données et à leur visualisation.
+
+```{julia}
+
+# Importer les packages
+
+
+
+```
+
+
+
+
