@@ -74,16 +74,394 @@ Le long de ce travail, nous utiliserons le langage de programmation [Julia](http
 
 # Visualisation des données
 
+***
+
 Tout d'abord, afin de comprendre un peu mieux notre jeu de données, nous avons commencé par effectuer des visualisations. Pour cela, nous commençons par charger les bibliothèques nécessaires à la manipulation des données et à leur visualisation.
 
 ```{julia}
 
 # Importer les packages
 
-
+using CSV
+using DataFrames
+using Dates
+using Statistics
+using Plots
+using Distributions
 
 ```
 
+Les données sont ensuite importées dans un tableau (dataframe), ce qui va nous permettre une manipulation structurée de nos données.
 
+```{julia}
 
+# Importer les données
 
+data = CSV.read("data_arles2021.csv", DataFrame)
+first(data, 5)
+
+```
+
+Suite à l'importation de nos données sous forme d'un dataframe Julia et la visualisation des cinq premières lignes, nous observons quatre variables principales : 
+
+- L'identifiant du mouton observé (`RFID`).
+- La date de la mesure du poids (`rdate`).
+- L'heure de la mesure du poids (`rheure`).
+- Le poids mesuré (`poids`).
+
+De plus, nous remarquons que la colonne de date est de type `String15` ce qui empêche toute manipulation temporelle, alors que celle des heures est bien en formet `Time`. Ainsi, nous convertissons la colonne des dates en format `Date` afin de permettre des opérations temporelles telles que l'agrégation ou la représentation graphique en fonction du temps.
+
+```{julia}
+
+# Préparation des dates
+
+data.rdate = Date.(data.rdate, dateformat"dd/mm/yyyy")
+
+println("Premières lignes :")
+display(first(data, 5))
+
+println("\nDernières lignes :")
+display(last(data, 5))
+
+```
+
+Nous voyons que la conversion en format de date a bien fonctionné. De plus, nous pouvons voir que nous avons accès à des mesures prises du 27 janvier 2021 au 29 avril 2021 ce qui couvre une période d'environ 3 mois.
+
+Avant de visualiser nos données, il est intéressant de connaître le nombre de brebis présentes dans notre jeu de données ainsi que quelques statistiques descriptives sur les mesures.
+
+```{julia}
+
+# Statistiques descriptives
+
+nbr_brebis = length(unique(data.RFID))
+nbr_mesures = nrow(data)
+nbr_mesures_par_brebis = combine(groupby(data, :RFID), nrow => :nbr_mesures)
+
+println("Nombre de brebis : $nbr_brebis")
+println("Nombre total de mesures : $nbr_mesures")
+println("Nombre moyen de mesures par brebis : $(round(Int, mean(nbr_mesures_par_brebis.nbr_mesures)))")
+
+```
+
+Nous voyons ainsi que nous avons un total de 107 brebis qui ont effectué des mesures de poids, pour un total de 32 361 mesures. Etant donné que nous sommes sur une période d'environ trois mois (soit 92 jours), et que nous avons environ 302 mesures par brebis, nous en déduisons que les brebis sont pesées plusieurs fois par jour (environ 3 fois par jours en moyenne).
+
+Nous cherchons maintenant à observer l'évolution temporelle du poids des brebis (sans transformation). Pour cela, nous allons visualiser le poids en fonction du temps pour l'ensemble des brebis.
+
+```{julia}
+
+# Visualisation graphique du poids des brebis
+
+plot(
+    data.rdate,
+    data.poids,
+    xlabel = "Date",
+    ylabel = "Poids (kg)",
+    title = "Évolution brute du poids des brebis",
+    legend = false,
+    seriestype = :scatter,
+    markersize = 2,
+    alpha = 0.5,
+    color = "#6495ED"
+)
+
+```
+
+Ce graphique revèle plusieurs problèmes importants dans nos données. Premièrement, nous ob servons de nombreuses mesures négatives (ce qui est imposible car un mouton ne peut pas peser 0kg). Ces valeurs abberantes suggèrent des erreurs de calibration de la balance, des problèmes de détection des brebis ou des dysfonctionnements du matériel de mesure. Deuxièmement, nous constatons une interruption complète des mesures pendant une longue période au début du mois d'avril, ce qui pourrait indiquer une panne du système, une maintenance de l'équipement, ou encore une période où les animaux n'ont pas eu accès à la balance. Troisièmement, même pour les valeurs posituves, nous observons une très forte dispersion verticale des points, avec des poids variant de quelques kilogrammes à plus de 80 kg. Cela confirme les erreurs mentionnées dans l'introduction, à savoir que les brebis peuvent être partiellement sur la balance (poids sous-estimé) ou que plusieurs brebis peuvent être simumtanément sur la balance (poids surestimé).
+
+Face à ces observations, il apparaît nécessaire de nettoyer les données avant toute analyse. Nous commençons donc par retirer les mesures avec un poids nul, qui correspondent clairement à des erreurs de mesure.
+
+```{julia}
+
+# Filtrage des données : suppression des poids négatifs ou nuls
+
+# Fonction pour arrondir à 2 décimales par défaut
+r(x) = round(x, digits=1)
+
+data_filtree = filter(ligne -> ligne.poids > 0, data)
+
+nbr_mesures_filtrees = nrow(data_filtree)
+nbr_mesures_supprimees = nbr_mesures - nbr_mesures_filtrees
+pourcentage_supprime = r(nbr_mesures_supprimees / nbr_mesures * 100)
+
+println("Nombre de mesures après filtrage : $nbr_mesures_filtrees")
+println("Nombre de mesures supprimées : $nbr_mesures_supprimees")
+println("Pourcentage de mesures supprimées : $pourcentage_supprime %")
+
+```
+
+Nous constatons que 3 482 mesures ont été supprimées, ce qui représente 10,8% du jeu de données initial. Cette proportion non négligeable de mesures abberantes confirme les problèmes de fiabilité du système de pesée automatique.
+
+Afin de mieux comprendr les patterns individuels de poids et d'identifier les erreurs de mesures restantes, nous allons maintenant visualiser l'évolution du poids pour deux brebis.
+
+```{julia}
+
+# Sélection de deux brebis
+
+brebis_selectionnees = ("250 017 033 503 251", "250 017 033 503 266")
+
+println("Brebis 1 : $(brebis_selectionnees[1])")
+println("Brebis 2 : $(brebis_selectionnees[2])")
+
+# Filtrer les données pour chaque brebis
+
+data_brebis1 = filter(ligne -> ligne.RFID == brebis_selectionnees[1], data_filtree)
+data_brebis2 = filter(ligne -> ligne.RFID == brebis_selectionnees[2], data_filtree)
+
+# Vérifier qu'on a bien des données
+
+println("Nombre de mesures pour brebis 1 : ", nrow(data_brebis1))
+println("Nombre de mesures pour brebis 2 : ", nrow(data_brebis2))
+
+# Graphique pour la première brebis
+
+p1 = plot(
+    data_brebis1.rdate,
+    data_brebis1.poids,
+    xlabel = "Date",
+    ylabel = "Poids (kg)",
+    title = "Brebis $(brebis_selectionnees[1])",
+    legend = false,
+    seriestype = :scatter,
+    markersize = 3,
+    color = "#6495ED"
+)
+
+# Graphique pour la deuxième brebis
+
+p2 = plot(
+    data_brebis2.rdate,
+    data_brebis2.poids,
+    xlabel = "Date",
+    ylabel = "Poids (kg)",
+    title = "Brebis $(brebis_selectionnees[2])",
+    legend = false,
+    seriestype = :scatter,
+    markersize = 3,
+    color = "#6495ED"
+)
+
+plot(p1, p2, layout = (2, 1), size = (800, 600))
+
+```
+
+Pour la première brebis (numéro 251), nous pouvons voir que la majorité des points se situent autour de 25-35kg avec une légère tendance à la hausse au fil du temps. Mais qu'il y a de nombreux points parasites au-dessous (jusqu'à plus de 70kg).
+
+Pour la seconde brebis (numéro 266), le poids réel semble se situer autour de 30-40kg avec également une tendance à la hausse. Cependant, nous observons également des points parasites en dessous des poids "réels" (6 points vraiment visibles se distinguent), avec des mesures à 20kg.
+
+# Modélisation et estimation du poids
+
+***
+
+Comme nous avons pu le constater lors de la phase de visualisation, nos données de pesée présentent de nombreuses valeurs abberantes qui rendent difficile l'estimation du poids réel des brebis au cours du temps.
+
+L'objectif de cette partie est de proposer, pour chaque brebis, une fonction $f(t)$ qui associe à chaque date $t$ une estimation fiable de son poids. Pour cela, nous devons d'abord identifier et traiter les mesures abberantes, puis modéliser l'évolution temporelle du poids.
+
+Nous commencerons donc par utiliser le modèle de **contamination de Huber** couplé à l'**algorithme EM** (Expectation-Maximization) pour distinguer les mesures fiables des valeurs aberrantes. Ce modèle considère que chaque mesure provient soit d'une distribution gaussienne représentant le poids réel de la brebis (avec une bruit de mesure naturel), soit d'une distribution contaminante représentant les erreurs systématiques.
+
+Nous finirons par ajuster un modèle de régression (linéaire, quadratique ou logistique) pour décrire l'évolution du poids de chaque brebis au cours de la période d'observation.
+
+## Modèle de Huber
+
+Pour chaque brebis, nous supposons que les mesures de poids observées $X_1, ..., X_n$ sont des variables aléatoires indépendantes et identiquement distribuées suivant une loi de probabilité $\mathcal{P}$ de la forme :
+
+$$\mathcal{P} = \epsilon \mathcal{P}_0 + (1-\epsilon)\mathcal{P}_1$$
+
+où :
+
+- $\mathcal{P}_0$ est la distribution des valeurs aberrantes (outliers).
+- $\mathcal{P}_1$ est la distribution des mesures correctes (poids réel + bruit de mesure).
+- $\epsilon$ est la proportion d'outliers dans les données.
+
+De manière équivalente, chaque mesure $X_i$ peut être vue comme :
+
+$$X_i = Z_i X_i^{(0)} + (1-Z_i)X_i^{(1)}$$
+
+avec $Z_i \sim \text{Bernoulli}(\epsilon)$ une variable latente indiquant si la mesure est un outlier ($Z_i = 1$) ou non ($Z_i = 0$).
+
+Dans le cas gaussien, nous supposons que :
+
+- $\mathcal{P}_0 = \mathcal{N}(m_0, \sigma_0^2)$ représente les outliers.
+- $\mathcal{P}_1 = \mathcal{N}(m_1, \sigma_1^2)$ représente les mesures fiables.
+
+Les paramètres à estimer sont donc $\theta = (m_0, \sigma_0, m_1, \sigma_1, \epsilon)$.
+
+## Algorithme EM
+
+L'algorithme Expectation-Maximization permet d'estimer ces paramètres en alternant deux étapes :
+
+**Étape E (Expectation)** : calcul de la probabilité a posteriori qu'une mesure soit un outlier, sachant les paramètres actuels $\theta^k$ :
+
+$$\tau_i^k = P(Z_i = 1 \mid X_i, \theta^k) = \frac{\epsilon^k p_0^{\theta^k}(X_i)}{\epsilon^k p_0^{\theta^k}(X_i) + (1-\epsilon^k) p_1^{\theta^k}(X_i)}$$
+
+**Étape M (Maximization)** : mise à jour des paramètres en maximisant la log-vraisemblance pondérée :
+
+$$\epsilon^{k+1} = \frac{1}{n}\sum_{i=1}^n \tau_i^k$$
+
+$$m_1^{k+1} = \frac{\sum_{i=1}^n (1-\tau_i^k) X_i}{\sum_{i=1}^n (1-\tau_i^k)}$$
+
+$$\sigma_1^{2,k+1} = \frac{\sum_{i=1}^n (1-\tau_i^k)(X_i - m_1^{k+1})^2}{\sum_{i=1}^n (1-\tau_i^k)}$$
+
+Et de même pour $m_0^{k+1}$ et $\sigma_0^{2,k+1}$ en remplaçant $(1-\tau_i^k)$ par $\tau_i^k$.
+
+## Implémentation
+
+Nous implémentons cet algorithme en Julia pour l'appliquer aux données de chaque brebis. 
+
+Nous initialisons la proportion d'outliers à $\epsilon = 0,2$, ce qui constitue une hypothèse de départ raisonable pour des données avec un nombre important d'outliers (comme nous l'avons visuellement observé précédemment). Cette valeur initiale sera automatiquement ajustée par l'algorithme ME au cours des iterations pour converger vers la vraie proportion d'outliers présent dans les données de chaque brebis.
+
+Nous fixons le nombre maximal d'itérations à 59, valeur normalement suffisante pour garantir la convergence de l'algorithme EM dans notre contexte. En pratique, l'algoriothme converge généralement en moins de 20 itérations, mais cette marge de sécurité assure que même les cas les plus difficile aboutissent à une solution stable.
+
+```{julia}
+
+# Fonction EM
+
+function em_huber(data; max_iter=50)
+    n = length(data)
+    
+    # Initialisation
+    m1 = median(data)            # Médiane des vraies valeurs
+    sigma1 = std(data) * 0.5
+    m0 = mean(filter(x -> abs(x - m1) > 2*sigma1, data))  # Moyenne des outliers
+    sigma0 = std(data) * 2
+    epsilon = 0.2                 # 20% d'outliers
+    
+    for iter in 1:max_iter
+        # Étape E : probabilité d'être un outlier
+        p0 = pdf.(Normal(m0, sigma0), data) # pdf : probability density function
+        p1 = pdf.(Normal(m1, sigma1), data)
+        tau = (epsilon .* p0) ./ (epsilon .* p0 .+ (1 - epsilon) .* p1)
+        
+        # Étape M : mise à jour des paramètres
+        epsilon = mean(tau)
+        
+        # Vraies valeurs (P1)
+        m1 = sum((1 .- tau) .* data) / sum(1 .- tau)
+        sigma1 = sqrt(sum((1 .- tau) .* (data .- m1).^2) / sum(1 .- tau))
+        
+        # Outliers (P0)
+        m0 = sum(tau .* data) / sum(tau)
+        sigma0 = sqrt(sum(tau .* (data .- m0).^2) / sum(tau))
+    end
+    
+    # Calculer les probabilités finales
+    p0 = pdf.(Normal(m0, sigma0), data)
+    p1 = pdf.(Normal(m1, sigma1), data)
+    tau_final = (epsilon .* p0) ./ (epsilon .* p0 .+ (1 - epsilon) .* p1)
+    
+    return m0, sigma0, m1, sigma1, epsilon, tau_final
+end
+
+```
+
+Une fois l'algorithme construit, nous allons le tester sur nos deux brebis choisies précédemment.
+
+```{julia}
+
+# Application de l'algorithme EM sur les deux brebis
+
+m0_1, sigma0_1, m1_1, sigma1_1, epsilon_1, tau_1 = em_huber(data_brebis1.poids)
+m0_2, sigma0_2, m1_2, sigma1_2, epsilon_2, tau_2 = em_huber(data_brebis2.poids)
+
+# Classification des mesures (seuil à 0.5 pour tau)
+outliers_1 = tau_1 .> 0.5
+outliers_2 = tau_2 .> 0.5
+
+println("Paramètres estimés pour la Brebis 1 :")
+println("  - Distribution des vraies valeurs (P1) :")
+println("    - Moyenne (m1) : $(r(m1_1)) kg")
+println("    - Écart-type (σ1) : $(r(sigma1_1)) kg")
+println("  - Distribution des outliers (P0) :")
+println("    - Moyenne (m0) : $(r(m0_1)) kg")
+println("    - Écart-type (σ0) : $(r(sigma0_1)) kg")
+println("  - Proportion d'outliers (ε) : $(r(epsilon_1 * 100))%")
+println("-> $(sum(outliers_1)) outliers détectés sur $(length(outliers_1)) mesures ($(r(sum(outliers_1)/length(outliers_1)*100))%)")
+
+println("\nParamètres estimés pour la Brebis 2 :")
+println("  - Distribution des vraies valeurs (P1) :")
+println("    - Moyenne (m1) : $(r(m1_2)) kg")
+println("    - Écart-type (σ1) : $(r(sigma1_2)) kg")
+println("  - Distribution des outliers (P0) :")
+println("    - Moyenne (m0) : $(r(m0_2)) kg")
+println("    - Écart-type (σ0) : $(r(sigma0_2)) kg")
+println("  - Proportion d'outliers (ε) : $(r(epsilon_2 * 100))%")
+println("-> $(sum(outliers_2)) outliers détectés sur $(length(outliers_2)) mesures ($(r(sum(outliers_2)/length(outliers_2)*100))%)")
+
+```
+
+L'application de l'algorithme EM sur nos deux brebis donne les résultats suivants.
+
+Pour la brebis numéro 251, l'algorithme identifie une distribution principale centrée autour de 29,3 kg avec un écart-type de 2,9 kg, représentant les mesures fiables du poids réel. La distribution contaminante est centrée sur 45,9 kg avec un écart-type beaucoup plus important (8,1 kg), correspondant aux mesures erronées où l'on suppose que plusieurs brebis sont montées sur la balance. L'algorithme estime que 63,5% des mesures sont des outliers, ce qui est cohérent avec nos observations graphiques initiales où la majorité des points étaient dispersés bien au-dessus des poids réel. En appliquant un seuil de classification à $0,5$, nous identifions effectivement 196 outliers sur 328 mesures (59,8%).
+
+En ce qui concerne la la brebis numéro 266, la distribution principale est centrée sur 39,3 kg avec un écart-type de 8,7 kg. La distribution contaminante, est centrée sur 56,4 kg et présente également une forte variabilité (9,7 kg). L'algorithme estime que 43% des mesures sont des outliers, soit 134 mesures sur 311 (43,1%). Cette brebis présente donc une proportion d'outliers plus faible que la première, mais toujours importante.
+
+La différence entre la proportion estimée pour la première brebis (63,5%) et les outliers effectivement détectés pour cette même brebis (59,8%) peut s'expliquer par la présence de mesures dont la probabilité d'être un outlier est proche du seuil de $0,5$, créant une zone d'incertitude dans la classification binaire, ce qui n'est pas le cas pour la seconde brebis.
+
+Ces résultats semble confirmer que le modèle de contamination de Huber parvient efficacement à séparer les deux populations de mesures. Nous allons maintenant visualiser cette séparation graphiquement afin de voir si nous retrouvons bien notre coubre de valeurs supposées réelles.
+
+```{julia}
+
+# Créer une colonne pour identifier les outliers (seuil à 0.5)
+data_brebis1_em = copy(data_brebis1)
+data_brebis1_em.outlier = tau_1 .> 0.5
+
+data_brebis2_em = copy(data_brebis2)
+data_brebis2_em.outlier = tau_2 .> 0.5
+
+# Graphique pour la première brebis
+p1 = scatter(
+    data_brebis1_em[.!data_brebis1_em.outlier, :].rdate,
+    data_brebis1_em[.!data_brebis1_em.outlier, :].poids,
+    xlabel = "Date",
+    ylabel = "Poids (kg)",
+    title = "Brebis $(brebis_selectionnees[1]) - Après EM",
+    label = "Mesures fiables",
+    markersize = 3,
+    color = "#6495ED",
+    alpha = 0.7,
+    legend = :topright
+)
+scatter!(
+    data_brebis1_em[data_brebis1_em.outlier, :].rdate,
+    data_brebis1_em[data_brebis1_em.outlier, :].poids,
+    label = "Outliers",
+    markersize = 3,
+    color = :red,
+    alpha = 0.5
+)
+
+# Graphique pour la deuxième brebis
+p2 = scatter(
+    data_brebis2_em[.!data_brebis2_em.outlier, :].rdate,
+    data_brebis2_em[.!data_brebis2_em.outlier, :].poids,
+    xlabel = "Date",
+    ylabel = "Poids (kg)",
+    title = "Brebis $(brebis_selectionnees[2]) - Après EM",
+    label = "Mesures fiables",
+    markersize = 3,
+    color = "#6495ED",
+    alpha = 0.7,
+    legend = :topright
+)
+scatter!(
+    data_brebis2_em[data_brebis2_em.outlier, :].rdate,
+    data_brebis2_em[data_brebis2_em.outlier, :].poids,
+    label = "Outliers",
+    markersize = 3,
+    color = :red,
+    alpha = 0.5
+)
+
+plot(p1, p2, layout = (2, 1), size = (800, 600))
+
+```
+
+Les graphiques ci-dessus illustrent l'efficacité de l'algorithme EM pour séparer les mesures fiables (en bleu) des outliers (en rouge). 
+
+Dans le premier graphique, nous observons une nette séparation entre les deux groupes de points. Les mesures fiables forment un nuage compact entre 25 et 35 kg, révélant une tendance à la hausse progressive du poids au cours du temps. Les outliers, marqués en rouge, sont systématiquement situés au-dessus de 35 kg et présentent une forte dispersion verticale. La clarté de cette séparation explique pourquoi l'algorithme détecte avec confiance près de 60% d'outliers dans ces données.
+
+Dans le second graphique, la situation est plus complexe. Bien que l'algorithme détecte 43% d'outliers, nous remarquons que certains points bleues se situent dans la zone des 40-50 kg, se mélangeant partiellement avec les outliers rouges. Cette superposition partielle des deux distributions explique la plus grande difficulté à classifier certaines mesures et suggère que cette brebis présente davantage de variabilité naturelle de poids ou des erreurs de mesure moins systématiques que la première. Néanmoins, les outliers extrêmes (au-dessus de 50 kg) sont correctement identifiés, bien que certains points anormalement bas ne soient pas détectés par cette approche. Le modèle de mélange à deux composantes privilégie en effet la détection des outliers hauts, plus nombreux et plus éloignés de la distribution principale.
+
++ appliquer à toutes les brebis
++ faire régression 
+
++ conclusion
