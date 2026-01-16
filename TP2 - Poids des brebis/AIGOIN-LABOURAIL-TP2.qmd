@@ -320,9 +320,9 @@ function em_huber(data; max_iter=50)
     
     # Initialisation
     m1 = median(data)            # Médiane des vraies valeurs
-    sigma1 = std(data) * 0.5
+    sigma1 = max(std(data) * 0.5, 0.1)
     m0 = mean(filter(x -> abs(x - m1) > 2*sigma1, data))  # Moyenne des outliers
-    sigma0 = std(data) * 2
+    sigma0 = max(std(data) * 2, 0.1)
     epsilon = 0.2                 # 20% d'outliers
     
     for iter in 1:max_iter
@@ -336,11 +336,11 @@ function em_huber(data; max_iter=50)
         
         # Vraies valeurs (P1)
         m1 = sum((1 .- tau) .* data) / sum(1 .- tau)
-        sigma1 = sqrt(sum((1 .- tau) .* (data .- m1).^2) / sum(1 .- tau))
+        sigma1 = max(sqrt(sum((1 .- tau) .* (data .- m1).^2) / sum(1 .- tau)), 0.1)
         
         # Outliers (P0)
         m0 = sum(tau .* data) / sum(tau)
-        sigma0 = sqrt(sum(tau .* (data .- m0).^2) / sum(tau))
+        sigma0 = max(sqrt(sum(tau .* (data .- m0).^2) / sum(tau)), 0.1)
     end
     
     # Calculer les probabilités finales
@@ -461,7 +461,238 @@ Dans le premier graphique, nous observons une nette séparation entre les deux g
 
 Dans le second graphique, la situation est plus complexe. Bien que l'algorithme détecte 43% d'outliers, nous remarquons que certains points bleues se situent dans la zone des 40-50 kg, se mélangeant partiellement avec les outliers rouges. Cette superposition partielle des deux distributions explique la plus grande difficulté à classifier certaines mesures et suggère que cette brebis présente davantage de variabilité naturelle de poids ou des erreurs de mesure moins systématiques que la première. Néanmoins, les outliers extrêmes (au-dessus de 50 kg) sont correctement identifiés, bien que certains points anormalement bas ne soient pas détectés par cette approche. Le modèle de mélange à deux composantes privilégie en effet la détection des outliers hauts, plus nombreux et plus éloignés de la distribution principale.
 
-+ appliquer à toutes les brebis
-+ faire régression 
+## Application à toutes les brebis
 
-+ conclusion
+Nous appliquons maintenant l'algorithme EM à l'ensemble des 107 brebis de notre jeu de données afin d'identifier les mesures fiables pour chaque animal.
+
+```{julia}
+
+# Application de l'algorithme EM à toutes les brebis
+
+function appliquer_em_toutes_brebis(data_filtree)
+    brebis_uniques = unique(data_filtree.RFID)
+    resultats_em = Dict()
+    
+    for id_brebis in brebis_uniques
+        donnees_brebis = filter(ligne -> ligne.RFID == id_brebis, data_filtree)
+        
+        if nrow(donnees_brebis) >= 10  # Au minimum 10 mesures pour appliquer EM
+            m0, sigma0, m1, sigma1, epsilon, tau_final = em_huber(donnees_brebis.poids)
+            resultats_em[id_brebis] = (
+                m0=m0, sigma0=sigma0, 
+                m1=m1, sigma1=sigma1, 
+                epsilon=epsilon, 
+                tau=tau_final,
+                n_mesures=nrow(donnees_brebis),
+                n_outliers=sum(tau_final .> 0.5)
+            )
+        end
+    end
+    
+    return resultats_em
+end
+
+resultats_em_global = appliquer_em_toutes_brebis(data_filtree)
+println("Algorithme EM appliqué à $(length(resultats_em_global)) brebis")
+
+# Statistiques globales sur les proportions d'outliers
+proportions_outliers = [res.epsilon * 100 for res in values(resultats_em_global)]
+n_mesures = [res.n_mesures for res in values(resultats_em_global)]
+n_outliers = [res.n_outliers for res in values(resultats_em_global)]
+
+println("\nStatistiques sur les outliers :")
+println("  - Proportion moyenne d'outliers : $(r(mean(proportions_outliers)))%")
+println("  - Plage : $(r(minimum(proportions_outliers)))% - $(r(maximum(proportions_outliers)))%")
+println("  - Écart-type : $(r(std(proportions_outliers)))%")
+println("\nNombre de mesures par brebis :")
+println("  - Moyenne : $(r(mean(n_mesures))) mesures")
+println("  - Total d'outliers détectés : $(sum(n_outliers)) sur $(sum(n_mesures)) mesures")
+
+```
+
+Les résultats montrent que l'algorithme EM a été appliqué avec succès à l'ensemble des brebis. La proportion d'outliers varie significativement d'une brebis à l'autre, reflétant des différences dans la qualité des mesures pour chaque animal.
+
+## Régression logistique
+
+Une fois les outliers identifiés par l'algorithme EM, nous pouvons maintenant modéliser l'évolution temporelle du poids de chaque brebis. Pour cela, nous utilisons une fonction logistique qui capture bien la dynamique de croissance suivie d'une stabilisation.
+
+La fonction logistique est définie comme :
+
+$$f(t) = \frac{L}{1 + e^{-k(t-t_0)}}$$
+
+où :
+
+- $L$ est la limite supérieure du poids (poids maximal asymptotique).
+- $k$ est le taux de croissance.
+- $t_0$ est le temps au point d'inflexion (où la croissance est maximale).
+- $t$ est le temps (en jours depuis le début des mesures).
+
+Nous implémentons une fonction qui, pour chaque brebis :
+1. Applique l'algorithme EM pour identifier les mesures fiables.
+2. Agrège les mesures par jour en calculant une médiane pondérée.
+3. Ajuste une fonction logistique par régression non linéaire.
+
+```{julia}
+
+# Importer le package pour la régression non linéaire
+using LsqFit
+
+# Fonction pour traiter une brebis et ajuster la régression logistique
+function poids_brebis_logistique(id, data_filtree)
+    d = copy(filter(ligne -> ligne.RFID == id, data_filtree))
+    if nrow(d) < 10; return nothing; end
+    
+    t0 = minimum(d.rdate)
+    d[!, :temps] = Float64.(Dates.value.(d.rdate .- t0))  # Temps en jours (0 à ~90)
+    d[!, :poids_em] = 1 .- em_huber(vec(d.poids))[6]
+    
+    temps_tries, poids_tries = Float64[], Float64[]
+    for t in sort(unique(d.temps))
+        # seuil abaissé pour garder assez de points (266) et fenêtre poids plus large
+        mask = (d.temps .== t) .& (d.poids_em .> 0.2) .& (d.poids .>= 5) .& (d.poids .<= 90)
+        p = d[mask, :poids]
+        if length(p) > 0
+            push!(poids_tries, median(p))
+            push!(temps_tries, float(t))
+        end
+    end
+    
+    if length(temps_tries) < 3; return nothing; end
+    # Trier les points restants
+    idx = sortperm(temps_tries)
+    temps_tries = temps_tries[idx]
+    poids_tries = poids_tries[idx]
+
+    
+    @. logistique(t, p) = p[1] / (1 + exp(-p[2] * (t - p[3])))
+    tmax = maximum(temps_tries)
+    lower = [minimum(poids_tries) * 0.8, 1e-4, 0.0]
+    upper = [maximum(poids_tries) + 15.0, 1.0, tmax]
+    init_sets = ([maximum(poids_tries), 0.1, median(temps_tries)],
+                 [mean(poids_tries), 0.05, tmax / 2])
+    params_opt = nothing
+    for p0 in init_sets
+        try
+            params_opt = coef(curve_fit(logistique, temps_tries, poids_tries, p0; lower=lower, upper=upper))
+            break
+        catch
+            params_opt = nothing
+        end
+    end
+    if isnothing(params_opt); return nothing; end
+
+    L = clamp(params_opt[1], minimum(poids_tries), maximum(poids_tries) + 15.0)
+    return (temps=temps_tries, poids=poids_tries, L=L, k=params_opt[2], t0=params_opt[3])
+end
+
+# Appliquer à toutes les brebis
+resultats_regression = Dict()
+brebis_uniques = unique(data_filtree.RFID)
+
+for id_brebis in brebis_uniques
+    resultat = poids_brebis_logistique(id_brebis, data_filtree)
+    if !isnothing(resultat)
+        resultats_regression[id_brebis] = resultat
+    end
+end
+
+println("Régression logistique ajustée pour $(length(resultats_regression)) brebis")
+
+# Statistiques sur les paramètres
+params_L = [res.L for res in values(resultats_regression)]
+params_k = [res.k for res in values(resultats_regression)]
+params_t0 = [res.t0 for res in values(resultats_regression)]
+
+println("\nParamètres de la régression logistique :")
+println("  - L (limite supérieure) : $(r(mean(params_L))) ± $(r(std(params_L))) kg")
+println("  - k (taux de croissance) : $(r(mean(params_k))) ± $(r(std(params_k)))")
+println("  - t0 (point d'inflexion) : $(r(mean(params_t0))) ± $(r(std(params_t0))) jours")
+
+```
+
+Ces statistiques globales indiquent que la plupart des courbes restent peu pentues : la moyenne de k est quasi nulle avec un écart-type nul, signe que l'ajustement privilégie des pentes très faibles sur de nombreuses brebis (données bruitées ou tendance faible). Le L moyen élevé (≈62 kg) avec un écart-type de 12 kg reflète des asymptotes tirées vers le haut par des points extrêmes ou des séries dispersées (cf. brebis 266). Le t0 médian (~10 jours) avec forte variabilité montre que le point d'inflexion est souvent positionné très tôt, conséquence des bornes et du manque de croissance marquée : la courbe se cale vite et reste quasi linéaire.
+
+Nous visualisons maintenant les résultats pour nos deux brebis d'exemple.
+
+```{julia}
+
+# Visualisation de la régression pour les deux brebis
+
+id1 = brebis_selectionnees[1]
+id2 = brebis_selectionnees[2]
+
+res1 = resultats_regression[id1]
+res2 = resultats_regression[id2]
+
+# Graphique brebis 1
+p1 = scatter(
+    res1.temps,
+    res1.poids,
+    xlabel = "Temps (jours)",
+    ylabel = "Poids (kg)",
+    title = "Brebis $(id1[end-2:end]) - Régression logistique",
+    label = "Mesures agrégées",
+    markersize = 4,
+    color = "#6495ED",
+    alpha = 0.7,
+    legend = :bottomright
+)
+
+temps_lisse1 = range(minimum(res1.temps), maximum(res1.temps), length=100)
+poids_ajuste1 = res1.L ./ (1 .+ exp.(-res1.k .* (temps_lisse1 .- res1.t0)))
+
+plot!(p1, temps_lisse1, poids_ajuste1, 
+      label = "Courbe logistique (L=$(r(res1.L))kg)", 
+      color = :red, 
+      linewidth = 2)
+
+# Graphique brebis 2
+p2 = scatter(
+    res2.temps,
+    res2.poids,
+    xlabel = "Temps (jours)",
+    ylabel = "Poids (kg)",
+    title = "Brebis $(id2[end-2:end]) - Régression logistique",
+    label = "Mesures agrégées",
+    markersize = 4,
+    color = "#6495ED",
+    alpha = 0.7,
+    legend = :bottomright
+)
+
+temps_lisse2 = range(minimum(res2.temps), maximum(res2.temps), length=100)
+poids_ajuste2 = res2.L ./ (1 .+ exp.(-res2.k .* (temps_lisse2 .- res2.t0)))
+
+plot!(p2, temps_lisse2, poids_ajuste2, 
+      label = "Courbe logistique (L=$(r(res2.L))kg)", 
+      color = :red, 
+      linewidth = 2)
+
+plot(p1, p2, layout = (2, 1), size = (800, 600))
+
+```
+
+Les graphiques montrent l'ajustement de la fonction logistique sur les mesures agrégées (points bleus) pour chaque brebis. La courbe rouge représente le modèle logistique ajusté qui capture l'évolution du poids au cours du temps.
+
+Interprétation :
+- Brebis 251 : la croissance est bien captée, avec une pente positive cohérente et un plateau estimé autour de 50 kg. La courbe suit l'augmentation progressive observée entre ~25 kg et ~34 kg.
+- Brebis 266 : le nuage est très dispersé et la tendance plus faible. Le modèle trouve une pente modérée et un L élevé (~70 kg) tiré par les points hauts ; la courbe reste néanmoins croissante mais moins informative du fait de la variabilité journalière.
+
+# Conclusion
+
+***
+
+Ce travail propose une chaîne complète pour traiter des pesées bruitées : filtrage EM pour séparer points fiables/outliers, agrégation journalière robuste, puis ajustement logistique.
+
+**Bilan des résultats :**
+
+- **Nettoyage EM** : le mélange de Huber retire efficacement les pesées aberrantes (cas multi-brebis ou mauvaise pose), ce qui stabilise les médianes quotidiennes.
+- **Régression logistique** : la courbe suit bien les brebis à tendance nette (ex. 251, plateau ~50 kg). Sur des séries très dispersées (ex. 266), le modèle reste croissant mais l'asymptote est tirée vers le haut, révélant la sensibilité aux points extrêmes.
+- **Variabilité individuelle** : les paramètres varient fortement d'une brebis à l'autre, reflet des différences de croissance et de la qualité de mesure.
+
+**Limites  :**
+
+- Le mélange à deux composantes détecte surtout les outliers hauts et peut laisser passer des valeurs trop basses.
+- L'ajustement logistique reste sensible aux valeurs extrêmes, en particulier sur des séries très bruitées.
+
+En pratique, la combinaison EM + agrégation robuste + logistique améliore nettement la lisibilité des trajectoires de poids, tout en gardant une marge de progrès sur la robustesse face aux dispersions extrêmes.
