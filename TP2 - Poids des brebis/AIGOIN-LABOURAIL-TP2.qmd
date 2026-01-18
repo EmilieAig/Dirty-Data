@@ -548,8 +548,8 @@ function poids_brebis_logistique(id, data_filtree)
     
     temps_tries, poids_tries = Float64[], Float64[]
     for t in sort(unique(d.temps))
-        # seuil abaissé pour garder assez de points (266) et fenêtre poids plus large
-        mask = (d.temps .== t) .& (d.poids_em .> 0.2) .& (d.poids .>= 5) .& (d.poids .<= 90)
+        
+        mask = (d.temps .== t) .& (d.poids_em .> 0.5) .& (d.poids .>= 15) .& (d.poids .<= 55)
         p = d[mask, :poids]
         if length(p) > 0
             push!(poids_tries, median(p))
