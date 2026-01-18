@@ -537,52 +537,38 @@ Nous implémentons une fonction qui, pour chaque brebis :
 # Importer le package pour la régression non linéaire
 using LsqFit
 
-# Fonction pour traiter une brebis et ajuster la régression logistique
+# Fonction simplifiée pour ajuster une régression logistique sur une brebis
 function poids_brebis_logistique(id, data_filtree)
-    d = copy(filter(ligne -> ligne.RFID == id, data_filtree))
+    # Filtrer les données de la brebis
+    d = filter(r -> r.RFID == id && r.poids > 0, data_filtree)
     if nrow(d) < 10; return nothing; end
     
-    t0 = minimum(d.rdate)
-    d[!, :temps] = Float64.(Dates.value.(d.rdate .- t0))  # Temps en jours (0 à ~90)
-    d[!, :poids_em] = 1 .- em_huber(vec(d.poids))[6]
+    # Convertir dates en jours et calculer les probabilités EM
+    d = transform(d, :rdate => (x -> Float64.(Dates.value.(x .- minimum(x)))) => :temps)
+    d[!, :prob_valide] = 1 .- em_huber(vec(d.poids))[6]
     
-    temps_tries, poids_tries = Float64[], Float64[]
-    for t in sort(unique(d.temps))
-        
-        mask = (d.temps .== t) .& (d.poids_em .> 0.5) .& (d.poids .>= 15) .& (d.poids .<= 55)
-        p = d[mask, :poids]
-        if length(p) > 0
-            push!(poids_tries, median(p))
-            push!(temps_tries, float(t))
-        end
+    # Agréger par jour : garder les poids probablement valides, prendre le 65e percentile
+    agg = combine(groupby(d, :temps)) do df
+        valides = df[(df.prob_valide .> 0.6) .& (15 .<= df.poids .<= 55), :poids]
+        isempty(valides) ? missing : quantile(valides, 0.65)
     end
+    dropmissing!(agg)
+    rename!(agg, :x1 => :poids)
     
-    if length(temps_tries) < 3; return nothing; end
-    # Trier les points restants
-    idx = sortperm(temps_tries)
-    temps_tries = temps_tries[idx]
-    poids_tries = poids_tries[idx]
-
+    if nrow(agg) < 3; return nothing; end
+    sort!(agg, :temps)
     
-    @. logistique(t, p) = p[1] / (1 + exp(-p[2] * (t - p[3])))
-    tmax = maximum(temps_tries)
-    lower = [minimum(poids_tries) * 0.8, 1e-4, 0.0]
-    upper = [maximum(poids_tries) + 15.0, 1.0, tmax]
-    init_sets = ([maximum(poids_tries), 0.1, median(temps_tries)],
-                 [mean(poids_tries), 0.05, tmax / 2])
-    params_opt = nothing
-    for p0 in init_sets
-        try
-            params_opt = coef(curve_fit(logistique, temps_tries, poids_tries, p0; lower=lower, upper=upper))
-            break
-        catch
-            params_opt = nothing
-        end
+    # Ajuster la courbe logistique avec biais : f(t) = L/(1+exp(-k(t-t0))) + b
+    @. model(t, p) = p[1] / (1 + exp(-p[2] * (t - p[3]))) + p[4]
+    p0 = [maximum(agg.poids), 0.1, median(agg.temps), 0.0]
+    
+    try
+        fit = curve_fit(model, agg.temps, agg.poids, p0)
+        params = coef(fit)
+        return (temps=agg.temps, poids=agg.poids, L=params[1], k=params[2], t0=params[3], b=params[4])
+    catch
+        return nothing
     end
-    if isnothing(params_opt); return nothing; end
-
-    L = clamp(params_opt[1], minimum(poids_tries), maximum(poids_tries) + 15.0)
-    return (temps=temps_tries, poids=poids_tries, L=L, k=params_opt[2], t0=params_opt[3])
 end
 
 # Appliquer à toutes les brebis
@@ -618,8 +604,8 @@ Nous visualisons maintenant les résultats pour nos deux brebis d'exemple.
 
 # Visualisation de la régression pour les deux brebis
 
-id1 = brebis_selectionnees[1]
-id2 = brebis_selectionnees[2]
+id1 = "250 017 033 503 634"  
+id2 = "250 017 033 503 004"
 
 res1 = resultats_regression[id1]
 res2 = resultats_regression[id2]
@@ -639,10 +625,10 @@ p1 = scatter(
 )
 
 temps_lisse1 = range(minimum(res1.temps), maximum(res1.temps), length=100)
-poids_ajuste1 = res1.L ./ (1 .+ exp.(-res1.k .* (temps_lisse1 .- res1.t0)))
+poids_ajuste1 = res1.L ./ (1 .+ exp.(-res1.k .* (temps_lisse1 .- res1.t0))) .+ res1.b
 
 plot!(p1, temps_lisse1, poids_ajuste1, 
-      label = "Courbe logistique (L=$(r(res1.L))kg)", 
+      label = "Courbe logistique", 
       color = :red, 
       linewidth = 2)
 
@@ -661,10 +647,10 @@ p2 = scatter(
 )
 
 temps_lisse2 = range(minimum(res2.temps), maximum(res2.temps), length=100)
-poids_ajuste2 = res2.L ./ (1 .+ exp.(-res2.k .* (temps_lisse2 .- res2.t0)))
+poids_ajuste2 = res2.L ./ (1 .+ exp.(-res2.k .* (temps_lisse2 .- res2.t0))) .+ res2.b
 
 plot!(p2, temps_lisse2, poids_ajuste2, 
-      label = "Courbe logistique (L=$(r(res2.L))kg)", 
+      label = "Courbe logistique", 
       color = :red, 
       linewidth = 2)
 
