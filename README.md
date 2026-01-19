@@ -63,7 +63,7 @@ Analyse et modélisation de l'évolution du poids de brebis à partir de mesures
 
 ## Technologies utilisées
 
-- **Langage** : [Julia](https://julialang.org/) 1.x
+- **Langage** : [Julia](https://julialang.org/)
 - **Packages principaux** :
   - `CSV` : Lecture et écriture de fichiers CSV
   - `DataFrames` : Manipulation de données tabulaires
