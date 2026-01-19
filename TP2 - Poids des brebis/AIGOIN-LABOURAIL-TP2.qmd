@@ -66,7 +66,7 @@ body, p {
 
 ***
 
-Ce rapport présente notre travail sur des données de pesée de brebis, effectuée par une machine équipée d'une balance connectée. L'objectif était d'affichern pour chaque brebis, une fonction à qui un temps $t$ associe le poids de la brebis au temps à l'aide d'une régression non linéaire.
+Ce rapport présente notre travail sur des données de pesée de brebis, effectuée par une machine équipée d'une balance connectée. L'objectif était d'afficher pour chaque brebis, une fonction à laquelle un temps $t$ associe le poids de la brebis au temps à l'aide d'une régression non linéaire.
 
 Notre jeu de données contient cependant de nombreuses erreurs (que nous verrons lors de la partie de visualisation) car la machine qui pèse les brebis ne peut pas vérifier la position de la brebis (peut ne pas être entièrement sur la balance et donc avoir un poids plus léger que réellement) ou encore le nombre de brebis présentent sur la balance (plusieurs brebis peuvent monter sur la balance et donc un poids élevé est enregistré sur une seule brebis).
 
@@ -88,6 +88,7 @@ using Dates
 using Statistics
 using Plots
 using Distributions
+using LsqFit      # régression non linéaire
 
 ```
 
@@ -109,7 +110,7 @@ Suite à l'importation de nos données sous forme d'un dataframe Julia et la vis
 - L'heure de la mesure du poids (`rheure`).
 - Le poids mesuré (`poids`).
 
-De plus, nous remarquons que la colonne de date est de type `String15` ce qui empêche toute manipulation temporelle, alors que celle des heures est bien en formet `Time`. Ainsi, nous convertissons la colonne des dates en format `Date` afin de permettre des opérations temporelles telles que l'agrégation ou la représentation graphique en fonction du temps.
+De plus, nous remarquons que la colonne de date est de type `String15` ce qui empêche toute manipulation temporelle, alors que celle des heures est bien en format `Time`. Ainsi, nous convertissons la colonne des dates en format `Date` afin de permettre des opérations temporelles telles que l'agrégation ou la représentation graphique en fonction du temps.
 
 ```{julia}
 
@@ -166,7 +167,7 @@ plot(
 
 ```
 
-Ce graphique revèle plusieurs problèmes importants dans nos données. Premièrement, nous ob servons de nombreuses mesures négatives (ce qui est imposible car un mouton ne peut pas peser 0kg). Ces valeurs abberantes suggèrent des erreurs de calibration de la balance, des problèmes de détection des brebis ou des dysfonctionnements du matériel de mesure. Deuxièmement, nous constatons une interruption complète des mesures pendant une longue période au début du mois d'avril, ce qui pourrait indiquer une panne du système, une maintenance de l'équipement, ou encore une période où les animaux n'ont pas eu accès à la balance. Troisièmement, même pour les valeurs posituves, nous observons une très forte dispersion verticale des points, avec des poids variant de quelques kilogrammes à plus de 80 kg. Cela confirme les erreurs mentionnées dans l'introduction, à savoir que les brebis peuvent être partiellement sur la balance (poids sous-estimé) ou que plusieurs brebis peuvent être simumtanément sur la balance (poids surestimé).
+Ce graphique revèle plusieurs problèmes importants dans nos données. Premièrement, nous observons de nombreuses mesures négatives (ce qui est impossible car un mouton ne peut pas peser 0kg). Ces valeurs abberantes suggèrent des erreurs de calibration de la balance, des problèmes de détection des brebis ou des dysfonctionnements du matériel de mesure. Deuxièmement, nous constatons une interruption complète des mesures pendant une longue période au début du mois d'avril, ce qui pourrait indiquer une panne du système, une maintenance de l'équipement, ou encore une période où les animaux n'ont pas eu accès à la balance. Troisièmement, même pour les valeurs positives, nous observons une très forte dispersion verticale des points, avec des poids variant de quelques kilogrammes à plus de 80 kg. Cela confirme les erreurs mentionnées dans l'introduction, à savoir que les brebis peuvent être partiellement sur la balance (poids sous-estimé) ou que plusieurs brebis peuvent être simultanément sur la balance (poids surestimé).
 
 Face à ces observations, il apparaît nécessaire de nettoyer les données avant toute analyse. Nous commençons donc par retirer les mesures avec un poids nul, qui correspondent clairement à des erreurs de mesure.
 
@@ -191,21 +192,22 @@ println("Pourcentage de mesures supprimées : $pourcentage_supprime %")
 
 Nous constatons que 3 482 mesures ont été supprimées, ce qui représente 10,8% du jeu de données initial. Cette proportion non négligeable de mesures abberantes confirme les problèmes de fiabilité du système de pesée automatique.
 
-Afin de mieux comprendr les patterns individuels de poids et d'identifier les erreurs de mesures restantes, nous allons maintenant visualiser l'évolution du poids pour deux brebis.
+Afin de mieux comprendre les patterns individuels de poids et d'identifier les erreurs de mesures restantes, nous allons maintenant visualiser l'évolution du poids pour deux brebis.
 
 ```{julia}
 
 # Sélection de deux brebis
 
-brebis_selectionnees = ("250 017 033 503 251", "250 017 033 503 266")
+brebis1 = "250 017 033 503 634"  
+brebis2 = "250 017 033 503 004"
 
-println("Brebis 1 : $(brebis_selectionnees[1])")
-println("Brebis 2 : $(brebis_selectionnees[2])")
+println("Brebis 1 : $(brebis1)")
+println("Brebis 2 : $(brebis2)")
 
 # Filtrer les données pour chaque brebis
 
-data_brebis1 = filter(ligne -> ligne.RFID == brebis_selectionnees[1], data_filtree)
-data_brebis2 = filter(ligne -> ligne.RFID == brebis_selectionnees[2], data_filtree)
+data_brebis1 = filter(ligne -> ligne.RFID == brebis1, data_filtree)
+data_brebis2 = filter(ligne -> ligne.RFID == brebis2, data_filtree)
 
 # Vérifier qu'on a bien des données
 
@@ -219,7 +221,7 @@ p1 = plot(
     data_brebis1.poids,
     xlabel = "Date",
     ylabel = "Poids (kg)",
-    title = "Brebis $(brebis_selectionnees[1])",
+    title = "Brebis 634",
     legend = false,
     seriestype = :scatter,
     markersize = 3,
@@ -233,7 +235,7 @@ p2 = plot(
     data_brebis2.poids,
     xlabel = "Date",
     ylabel = "Poids (kg)",
-    title = "Brebis $(brebis_selectionnees[2])",
+    title = "Brebis 004",
     legend = false,
     seriestype = :scatter,
     markersize = 3,
@@ -244,21 +246,19 @@ plot(p1, p2, layout = (2, 1), size = (800, 600))
 
 ```
 
-Pour la première brebis (numéro 251), nous pouvons voir que la majorité des points se situent autour de 25-35kg avec une légère tendance à la hausse au fil du temps. Mais qu'il y a de nombreux points parasites au-dessous (jusqu'à plus de 70kg).
+Pour la première brebis (numéro 634), nous observons que la majorité des points se situent entre 25 et 35 kg, formant une bande relativement stable avec une légère tendance à la hausse au fil du temps. Cependant, de nombreux points parasites apparaissent nettement au-dessus de cette zone principale, atteignant parfois 70 kg. Ces valeurs aberrantes, dispersées tout au long de la période d'observation, correspondent certainement à des situations où plusieurs brebis sont montées simultanément sur la balance.
 
-Pour la seconde brebis (numéro 266), le poids réel semble se situer autour de 30-40kg avec également une tendance à la hausse. Cependant, nous observons également des points parasites en dessous des poids "réels" (6 points vraiment visibles se distinguent), avec des mesures à 20kg.
+Pour la seconde brebis (numéro 004), la situation est plus problématique. Le poids réel semble également se situer autour de 25-35 kg avec une tendance globale à la hausse au cours du temps. Toutefois, nous observons une quantité très importante de points parasites, tant au-dessus qu'en dessous de cette zone. Les valeurs extrêmes atteignent jusqu'à 70 kg et descendent parfois sous les 20 kg. Cette forte contamination des données rend l'identification visuelle du poids réel plus difficile pour cet animal et souligne l'importance d'une méthode statistique robuste pour filtrer ces mesures aberrantes.
 
 # Modélisation et estimation du poids
 
 ***
 
-Comme nous avons pu le constater lors de la phase de visualisation, nos données de pesée présentent de nombreuses valeurs abberantes qui rendent difficile l'estimation du poids réel des brebis au cours du temps.
+Comme nous avons pu le constater lors de la phase de visualisation, nos données de pesée présentent de nombreuses valeurs aberrantes qui rendent difficile l'estimation du poids réel des brebis au cours du temps.
 
-L'objectif de cette partie est de proposer, pour chaque brebis, une fonction $f(t)$ qui associe à chaque date $t$ une estimation fiable de son poids. Pour cela, nous devons d'abord identifier et traiter les mesures abberantes, puis modéliser l'évolution temporelle du poids.
+Comme nous avons pu le constater lors de la phase de visualisation, nos données de pesée présentent de nombreuses valeurs aberrantes qui rendent difficile l'estimation du poids réel des brebis au cours du temps.
 
-Nous commencerons donc par utiliser le modèle de **contamination de Huber** couplé à l'**algorithme EM** (Expectation-Maximization) pour distinguer les mesures fiables des valeurs aberrantes. Ce modèle considère que chaque mesure provient soit d'une distribution gaussienne représentant le poids réel de la brebis (avec une bruit de mesure naturel), soit d'une distribution contaminante représentant les erreurs systématiques.
-
-Nous finirons par ajuster un modèle de régression (linéaire, quadratique ou logistique) pour décrire l'évolution du poids de chaque brebis au cours de la période d'observation.
+L'objectif de cette partie est de proposer, pour chaque brebis, une fonction $f(t)$ qui associe à chaque date $t$ une estimation fiable de son poids. Pour cela, nous procéderons en deux étapes. Dans un premier temps, nous utiliserons le modèle de contamination de Huber couplé à l'algorithme EM (Expectation-Maximization) pour distinguer les mesures fiables des valeurs aberrantes. Ce modèle considère que chaque mesure provient soit d'une distribution gaussienne représentant le poids réel de la brebis (avec un bruit de mesure naturel), soit d'une distribution contaminante représentant les erreurs systématiques. Dans un second temps, nous ajusterons un modèle de régression logistique sur les mesures identifiées comme fiables pour décrire l'évolution du poids de chaque brebis au cours de la période d'observation.
 
 ## Modèle de Huber
 
@@ -309,7 +309,7 @@ Nous implémentons cet algorithme en Julia pour l'appliquer aux données de chaq
 
 Nous initialisons la proportion d'outliers à $\epsilon = 0,2$, ce qui constitue une hypothèse de départ raisonable pour des données avec un nombre important d'outliers (comme nous l'avons visuellement observé précédemment). Cette valeur initiale sera automatiquement ajustée par l'algorithme ME au cours des iterations pour converger vers la vraie proportion d'outliers présent dans les données de chaque brebis.
 
-Nous fixons le nombre maximal d'itérations à 59, valeur normalement suffisante pour garantir la convergence de l'algorithme EM dans notre contexte. En pratique, l'algoriothme converge généralement en moins de 20 itérations, mais cette marge de sécurité assure que même les cas les plus difficile aboutissent à une solution stable.
+Nous fixons le nombre maximal d'itérations à 50, valeur normalement suffisante pour garantir la convergence de l'algorithme EM dans notre contexte. En pratique, l'algorithme converge généralement en moins de 20 itérations, mais cette marge de sécurité assure que même les cas les plus difficile aboutissent à une solution stable.
 
 ```{julia}
 
@@ -390,13 +390,15 @@ println("-> $(sum(outliers_2)) outliers détectés sur $(length(outliers_2)) mes
 
 L'application de l'algorithme EM sur nos deux brebis donne les résultats suivants.
 
-Pour la brebis numéro 251, l'algorithme identifie une distribution principale centrée autour de 29,3 kg avec un écart-type de 2,9 kg, représentant les mesures fiables du poids réel. La distribution contaminante est centrée sur 45,9 kg avec un écart-type beaucoup plus important (8,1 kg), correspondant aux mesures erronées où l'on suppose que plusieurs brebis sont montées sur la balance. L'algorithme estime que 63,5% des mesures sont des outliers, ce qui est cohérent avec nos observations graphiques initiales où la majorité des points étaient dispersés bien au-dessus des poids réel. En appliquant un seuil de classification à $0,5$, nous identifions effectivement 196 outliers sur 328 mesures (59,8%).
+Pour la brebis numéro 634, l'algorithme identifie une distribution principale centrée autour de 28,3 kg avec un écart-type de 3,7 kg, représentant les mesures fiables du poids réel. La distribution contaminante est centrée sur 45,4 kg avec un écart-type beaucoup plus important (7,4 kg), correspondant aux mesures erronées où l'on suppose que plusieurs brebis sont montées sur la balance. L'algorithme estime que 28,4% des mesures sont des outliers. En appliquant un seuil de classification à 0,5, nous identifions effectivement 43 outliers sur 162 mesures (26,5%).
 
-En ce qui concerne la la brebis numéro 266, la distribution principale est centrée sur 39,3 kg avec un écart-type de 8,7 kg. La distribution contaminante, est centrée sur 56,4 kg et présente également une forte variabilité (9,7 kg). L'algorithme estime que 43% des mesures sont des outliers, soit 134 mesures sur 311 (43,1%). Cette brebis présente donc une proportion d'outliers plus faible que la première, mais toujours importante.
+En ce qui concerne la brebis numéro 004, la distribution principale est centrée sur 29,7 kg avec un écart-type de 2,3 kg. La distribution contaminante est centrée sur 41,7 kg et présente également une forte variabilité (10,8 kg). L'algorithme estime que 65,6% des mesures sont des outliers, soit 199 mesures détectées sur 341 (58,4%). Cette brebis présente donc une proportion d'outliers nettement plus élevée que la première, reflétant une qualité de mesure bien plus dégradée.
 
-La différence entre la proportion estimée pour la première brebis (63,5%) et les outliers effectivement détectés pour cette même brebis (59,8%) peut s'expliquer par la présence de mesures dont la probabilité d'être un outlier est proche du seuil de $0,5$, créant une zone d'incertitude dans la classification binaire, ce qui n'est pas le cas pour la seconde brebis.
+Les différences observées entre $\epsilon$ et les outliers effectivement détectés s'expliquent par la présence de mesures dont la probabilité $\tau_i$ est proche du seuil de 0,5 : ces mesures contribuent à faire monter $\epsilon$ tout en n'étant pas classées comme outliers car elles ne dépassent pas tout à fait ce seuil.
 
-Ces résultats semble confirmer que le modèle de contamination de Huber parvient efficacement à séparer les deux populations de mesures. Nous allons maintenant visualiser cette séparation graphiquement afin de voir si nous retrouvons bien notre coubre de valeurs supposées réelles.
+De plus, la différence importante entre les deux brebis (26,5% contre 58,4% d'outliers détectés) s'explique par des conditions de pesée très différentes. La brebis 634 semble avoir été pesée dans des conditions plus contrôlées, tandis que la brebis 004 a manifestement subi de nombreuses interférences lors des mesures.
+
+Ces résultats confirment que le modèle de contamination de Huber parvient efficacement à séparer les deux populations de mesures. Nous allons maintenant visualiser cette séparation graphiquement afin de vérifier si nous retrouvons bien notre courbe de valeurs supposées réelles.
 
 ```{julia}
 
@@ -413,7 +415,7 @@ p1 = scatter(
     data_brebis1_em[.!data_brebis1_em.outlier, :].poids,
     xlabel = "Date",
     ylabel = "Poids (kg)",
-    title = "Brebis $(brebis_selectionnees[1]) - Après EM",
+    title = "Brebis 634 - Après EM",
     label = "Mesures fiables",
     markersize = 3,
     color = "#6495ED",
@@ -435,7 +437,7 @@ p2 = scatter(
     data_brebis2_em[.!data_brebis2_em.outlier, :].poids,
     xlabel = "Date",
     ylabel = "Poids (kg)",
-    title = "Brebis $(brebis_selectionnees[2]) - Après EM",
+    title = "Brebis 004 - Après EM",
     label = "Mesures fiables",
     markersize = 3,
     color = "#6495ED",
@@ -451,15 +453,17 @@ scatter!(
     alpha = 0.5
 )
 
-plot(p1, p2, layout = (2, 1), size = (800, 600))
+plot(p1, p2, layout = (2, 1), size = (700, 600))
 
 ```
 
-Les graphiques ci-dessus illustrent l'efficacité de l'algorithme EM pour séparer les mesures fiables (en bleu) des outliers (en rouge). 
+Les graphiques ci-dessus illustrent l'efficacité de l'algorithme EM pour séparer les mesures fiables (en bleu) des outliers (en rouge).
 
-Dans le premier graphique, nous observons une nette séparation entre les deux groupes de points. Les mesures fiables forment un nuage compact entre 25 et 35 kg, révélant une tendance à la hausse progressive du poids au cours du temps. Les outliers, marqués en rouge, sont systématiquement situés au-dessus de 35 kg et présentent une forte dispersion verticale. La clarté de cette séparation explique pourquoi l'algorithme détecte avec confiance près de 60% d'outliers dans ces données.
+Pour la brebis 634, nous observons une excellente séparation entre les deux groupes de points. Les mesures fiables forment un nuage compact entre 20 et 35 kg, révélant une relative stabilité du poids au cours du temps avec une légère tendance à la hausse en fin de période. Les outliers, marqués en rouge, sont systématiquement situés au-dessus de 35 kg et peuvent atteindre jusqu'à 60 kg, correspondant clairement aux situations où plusieurs brebis sont montées simultanément sur la balance. La proportion modérée d'outliers (26,5%) témoigne d'une qualité de mesure globalement satisfaisante pour cet animal.
 
-Dans le second graphique, la situation est plus complexe. Bien que l'algorithme détecte 43% d'outliers, nous remarquons que certains points bleues se situent dans la zone des 40-50 kg, se mélangeant partiellement avec les outliers rouges. Cette superposition partielle des deux distributions explique la plus grande difficulté à classifier certaines mesures et suggère que cette brebis présente davantage de variabilité naturelle de poids ou des erreurs de mesure moins systématiques que la première. Néanmoins, les outliers extrêmes (au-dessus de 50 kg) sont correctement identifiés, bien que certains points anormalement bas ne soient pas détectés par cette approche. Le modèle de mélange à deux composantes privilégie en effet la détection des outliers hauts, plus nombreux et plus éloignés de la distribution principale.
+Pour la brebis 004, la situation est plus complexe. Avec 58,4% d'outliers détectés, plus de la moitié des mesures sont considérées comme aberrantes. L'algorithme parvient bien à identifier les valeurs extrêmes : toutes les mesures au-dessus de 30 kg en début de période et au-dessus de 35 kg par la suite sont correctement classées comme outliers (aucun point bleu n'apparaît dans ces zones extrêmes), de même que les valeurs anormalement basses. Cette performance témoigne de l'efficacité du modèle de mélange pour détecter les mesures clairement aberrantes. Cependant, l'algorithme présente une limitation importante car il ne semble pas prendre totalement en compte l'évolution temporelle du poids. Nous observons que les brebis présentent une tendance globale à la hausse au cours de la période d'observation, avec un poids réel qui augmente progressivement. Or, le modèle EM considère l'ensemble des mesures comme issues d'une distribution stationnaire (sans évolution dans le temps) et estime donc une moyenne et un écart-type fixes pour la distribution des mesures fiables. En conséquence, les valeurs autour de 35 kg en fin de période, qui correspondent probablement au poids réel de la brebis après plusieurs mois de croissance, sont incorrectement classées comme outliers.
+
+Cette sur-détection d'outliers en fin de période illustre la principale faiblesse de notre approche : l'absence de prise en compte de la dynamique temporelle dans le modèle de mélange. Malgré cette limitation, les mesures fiables identifiées (en bleu) forment un signal cohérent qui permettra, lors de l'étape de régression logistique, de capturer la tendance à la hausse du poids au cours du temps.
 
 ## Application à toutes les brebis
 
@@ -469,14 +473,14 @@ Nous appliquons maintenant l'algorithme EM à l'ensemble des 107 brebis de notre
 
 # Application de l'algorithme EM à toutes les brebis
 
-function appliquer_em_toutes_brebis(data_filtree)
+function em_toutes_brebis(data_filtree)
     brebis_uniques = unique(data_filtree.RFID)
     resultats_em = Dict()
     
     for id_brebis in brebis_uniques
         donnees_brebis = filter(ligne -> ligne.RFID == id_brebis, data_filtree)
         
-        if nrow(donnees_brebis) >= 10  # Au minimum 10 mesures pour appliquer EM
+        if nrow(donnees_brebis) >= 10  # Au min 10 mesures pour appliquer EM
             m0, sigma0, m1, sigma1, epsilon, tau_final = em_huber(donnees_brebis.poids)
             resultats_em[id_brebis] = (
                 m0=m0, sigma0=sigma0, 
@@ -492,25 +496,78 @@ function appliquer_em_toutes_brebis(data_filtree)
     return resultats_em
 end
 
-resultats_em_global = appliquer_em_toutes_brebis(data_filtree)
-println("Algorithme EM appliqué à $(length(resultats_em_global)) brebis")
+em_global = em_toutes_brebis(data_filtree)
+println("Algorithme EM appliqué à $(length(em_global)) brebis sur $nbr_brebis.")
 
 # Statistiques globales sur les proportions d'outliers
-proportions_outliers = [res.epsilon * 100 for res in values(resultats_em_global)]
-n_mesures = [res.n_mesures for res in values(resultats_em_global)]
-n_outliers = [res.n_outliers for res in values(resultats_em_global)]
+prop_outliers = [res.epsilon * 100 for res in values(em_global)]
+n_mesures = [res.n_mesures for res in values(em_global)]
+n_outliers = [res.n_outliers for res in values(em_global)]
 
 println("\nStatistiques sur les outliers :")
-println("  - Proportion moyenne d'outliers : $(r(mean(proportions_outliers)))%")
-println("  - Plage : $(r(minimum(proportions_outliers)))% - $(r(maximum(proportions_outliers)))%")
-println("  - Écart-type : $(r(std(proportions_outliers)))%")
+println("  - Nombre d'outliers détectés : $(sum(n_outliers)) sur $(sum(n_mesures)) mesures")
+println("  - Proportion moyenne d'outliers : $(r(mean(prop_outliers)))%")
+println("  - Écart-type : $(r(std(prop_outliers)))%")
+
 println("\nNombre de mesures par brebis :")
 println("  - Moyenne : $(r(mean(n_mesures))) mesures")
-println("  - Total d'outliers détectés : $(sum(n_outliers)) sur $(sum(n_mesures)) mesures")
+
 
 ```
 
-Les résultats montrent que l'algorithme EM a été appliqué avec succès à l'ensemble des brebis. La proportion d'outliers varie significativement d'une brebis à l'autre, reflétant des différences dans la qualité des mesures pour chaque animal.
+L'application de l'algorithme EM à l'ensemble des 105 brebis ayant suffisamment de mesures (au moins 10) a permis de traiter 28 862 mesures au total. Sur cet ensemble, 9 223 outliers ont été détectés, soit une proportion moyenne de 42,5% avec un écart-type de 14,8%. Cette forte variabilité entre brebis (écart-type important) reflète des différences dans la qualité des mesures pour chaque animal, certaines brebis présentant des taux d'outliers beaucoup plus élevés que d'autres.
+
+```{julia}
+
+# Créer des DataFrames pour les mesures fiables et les outliers
+mesures_fiables = DataFrame(rdate=Date[], poids=Float64[])
+outliers_detectes = DataFrame(rdate=Date[], poids=Float64[])
+
+for (id_brebis, res) in em_global
+    donnees_brebis = filter(ligne -> ligne.RFID == id_brebis, data_filtree)
+    sort!(donnees_brebis, :rdate)  # S'assurer de la cohérence de l'ordre
+    outliers = res.tau .> 0.5
+    
+    # Ajouter aux DataFrames correspondants
+    append!(mesures_fiables, donnees_brebis[.!outliers, [:rdate, :poids]])
+    append!(outliers_detectes, donnees_brebis[outliers, [:rdate, :poids]])
+end
+
+println("Mesures fiables : $(nrow(mesures_fiables))")
+println("Outliers détectés : $(nrow(outliers_detectes))")
+
+# Graphique
+p_global = scatter(
+    mesures_fiables.rdate,
+    mesures_fiables.poids,
+    xlabel = "Date",
+    ylabel = "Poids (kg)",
+    title = "Évolution du poids - Toutes les brebis (après EM)",
+    label = "Mesures fiables",
+    markersize = 2,
+    color = "#6495ED",
+    alpha = 0.3,
+    legend = :topright
+)
+
+scatter!(
+    outliers_detectes.rdate,
+    outliers_detectes.poids,
+    label = "Outliers",
+    markersize = 2,
+    color = :red,
+    alpha = 0.2
+)
+
+display(p_global)
+
+```
+
+Le graphique ci-dessus présente l'ensemble des mesures après classification par l'algorithme EM. La séparation entre mesures fiables (en bleu) et outliers (en rouge) est visuellement assez nette. Les mesures fiables forment une bande compacte principalement située entre 20 et 38 kg, révélant une tendance générale à la hausse du poids au cours de la période d'observation. Les outliers, quant à eux, sont majoritairement concentrés au-dessus de 40 kg et peuvent atteindre jusqu'à 80 kg, confirmant qu'ils correspondent bien aux situations où plusieurs brebis sont montées simultanément sur la balance.
+
+Nous observons néanmoins une certaine superposition entre les deux groupes : quelques points bleus apparaissent parmi les points rouges et inversement. Cette superposition partielle peut s'expliquer par la forte variation individuelle des poids entre les brebis. En effet, certaines brebis peuvent naturellement peser 40 kg, tandis que d'autres n'en pèse que 25 kg. Cette variabilité inter-individuelle rend parfois difficile la distinction entre une mesure fiable d'une brebis lourde et un outlier d'une brebis plus légère, ce qui justifie les quelques classifications ambiguës observées.
+
+Nous remarquons également que très peu d'outliers sont détectés en dessous de 20 kg, ce qui confirme notre observation précédente selon laquelle le modèle de mélange à deux composantes privilégie la détection des outliers hauts. Les mesures correspondant à des pesées partielles (brebis pas entièrement sur la balance) restent donc en grande partie non détectées par cette approche. Malgré cette limitation, la qualité de la séparation obtenue est semble suffisante pour permettre une modélisation fiable de l'évolution du poids dans la suite de notre analyse.
 
 ## Régression logistique
 
@@ -527,17 +584,12 @@ où :
 - $t_0$ est le temps au point d'inflexion (où la croissance est maximale).
 - $t$ est le temps (en jours depuis le début des mesures).
 
-Nous implémentons une fonction qui, pour chaque brebis :
-1. Applique l'algorithme EM pour identifier les mesures fiables.
-2. Agrège les mesures par jour en calculant une médiane pondérée.
-3. Ajuste une fonction logistique par régression non linéaire.
+Nous implémentons une fonction qui, pour chaque brebis commence par appliquer l'algorithme EM pour identifier les mesures fiables. Ensuite, qui agrège les mesures par jour en calculant une médiane pondérée. Enfin, qui ajuste une fonction logistique par régression non linéaire.
 
 ```{julia}
 
-# Importer le package pour la régression non linéaire
-using LsqFit
+# Fonction pour ajuster une régression logistique sur une brebis
 
-# Fonction simplifiée pour ajuster une régression logistique sur une brebis
 function poids_brebis_logistique(id, data_filtree)
     # Filtrer les données de la brebis
     d = filter(r -> r.RFID == id && r.poids > 0, data_filtree)
@@ -547,7 +599,7 @@ function poids_brebis_logistique(id, data_filtree)
     d = transform(d, :rdate => (x -> Float64.(Dates.value.(x .- minimum(x)))) => :temps)
     d[!, :prob_valide] = 1 .- em_huber(vec(d.poids))[6]
     
-    # Agréger par jour : garder les poids probablement valides, prendre le 65e percentile
+    # Agréger par jour (garder les poids probablement valides, prendre le 65e percentile)
     agg = combine(groupby(d, :temps)) do df
         valides = df[(df.prob_valide .> 0.6) .& (15 .<= df.poids .<= 55), :poids]
         isempty(valides) ? missing : quantile(valides, 0.65)
@@ -596,19 +648,16 @@ println("  - t0 (point d'inflexion) : $(r(mean(params_t0))) ± $(r(std(params_t0
 
 ```
 
-Ces statistiques globales indiquent que la plupart des courbes restent peu pentues : la moyenne de k est quasi nulle avec un écart-type nul, signe que l'ajustement privilégie des pentes très faibles sur de nombreuses brebis (données bruitées ou tendance faible). Le L moyen élevé (≈62 kg) avec un écart-type de 12 kg reflète des asymptotes tirées vers le haut par des points extrêmes ou des séries dispersées (cf. brebis 266). Le t0 médian (~10 jours) avec forte variabilité montre que le point d'inflexion est souvent positionné très tôt, conséquence des bornes et du manque de croissance marquée : la courbe se cale vite et reste quasi linéaire.
+Ces statistiques globales révèlent une très forte hétérogénéité dans les trajectoire de croissance du poids des brebis (les écart-stypes sont très élevés pour les trois paramètres). De plus, cela indique que la plupart des courbes restent peu pentues : la moyenne de $k$ est presque nulle, signe que l'ajustement privilégie des pentes très faibles sur de nombreuses brebis (données bruitées ou tendance faible). Le $L$ moyen élevé ($\simeq$ 62 kg) avec un écart-type de 12 kg reflète des asymptotes tirées vers le haut par des points extrêmes ou des séries dispersées (cf. brebis 266). Le $t_0$ médian ($\simeq$ 10 jours) avec forte variabilité montre que le point d'inflexion est souvent positionné très tôt, conséquence des bornes et du manque de croissance marquée : la courbe se cale vite et reste quasiment linéaire.
 
-Nous visualisons maintenant les résultats pour nos deux brebis d'exemple.
+Pour mieux comprendre la performance du modèle, il est donc nécessaire d'examiner les ajustements individuels plutôt que de se fier aux statistiques agrégées. Nous visualisons ci-dessous les résultats pour nos deux brebis d'exemple.
 
 ```{julia}
 
 # Visualisation de la régression pour les deux brebis
 
-id1 = "250 017 033 503 634"  
-id2 = "250 017 033 503 004"
-
-res1 = resultats_regression[id1]
-res2 = resultats_regression[id2]
+res1 = resultats_regression[brebis1]
+res2 = resultats_regression[brebis2]
 
 # Graphique brebis 1
 p1 = scatter(
@@ -616,7 +665,7 @@ p1 = scatter(
     res1.poids,
     xlabel = "Temps (jours)",
     ylabel = "Poids (kg)",
-    title = "Brebis $(id1[end-2:end]) - Régression logistique",
+    title = "Brebis $(brebis1[end-2:end]) - Régression logistique",
     label = "Mesures agrégées",
     markersize = 4,
     color = "#6495ED",
@@ -638,7 +687,7 @@ p2 = scatter(
     res2.poids,
     xlabel = "Temps (jours)",
     ylabel = "Poids (kg)",
-    title = "Brebis $(id2[end-2:end]) - Régression logistique",
+    title = "Brebis $(brebis2[end-2:end]) - Régression logistique",
     label = "Mesures agrégées",
     markersize = 4,
     color = "#6495ED",
@@ -654,31 +703,28 @@ plot!(p2, temps_lisse2, poids_ajuste2,
       color = :red, 
       linewidth = 2)
 
-plot(p1, p2, layout = (2, 1), size = (800, 600))
+plot(p1, p2, layout = (2, 1), size = (700, 600))
 
 ```
 
 Les graphiques montrent l'ajustement de la fonction logistique sur les mesures agrégées (points bleus) pour chaque brebis. La courbe rouge représente le modèle logistique ajusté qui capture l'évolution du poids au cours du temps.
 
-Interprétation :
-- Brebis 251 : la croissance est bien captée, avec une pente positive cohérente et un plateau estimé autour de 50 kg. La courbe suit l'augmentation progressive observée entre ~25 kg et ~34 kg.
-- Brebis 266 : le nuage est très dispersé et la tendance plus faible. Le modèle trouve une pente modérée et un L élevé (~70 kg) tiré par les points hauts ; la courbe reste néanmoins croissante mais moins informative du fait de la variabilité journalière.
+Pour le brebis 634, l'ajustement logistique semble plutôt réussi. Les points suivent fidèlement la courbe rouge, qui décrit une croissance progressive du poids depuis environ 25 kg en début de période jusqu'à environ 33 kg à la fin.
+
+Pour la brebis 004, la situation est plus contrastée. Bien que la courbe logistique parvienne à capturer la tendance générale à la hausse (de 28 kg à environ 32 kg), nous observons une dipsersion verticale importante des points. Cette variabilité peut s'expliquer par plusieurs facteurs : soit cette brebis présente des fluctuations de poids plus marquées, soit les mesures pour cet individu contiennent davantage de bruit résiduel après le filtrage EM. Néanmoins, la courbe rouge parvient à identifier une trajectoire en forme de S caractéristique de la fonction logistique : avec une phase de croissance lente au départ, une accélération autour de 40 jours, puis un ralentissement progressif vers le plateau.
+
+Ces deux exemples illustrent la dualité des résultats : lorsque les données sont de bonne qualité après filtrage (commepour la brebis 634), le modèle logistique offre un bon ajustement et permet une prédiction fiable du poids. En revanche, pour les brebis présentant des mesures plus dispersées (comme la brebis 004), la précision des prédiction est limité par la variabilité des données (bien que le modèle reste information sur la tendance générale).
 
 # Conclusion
 
 ***
 
-Ce travail propose une chaîne complète pour traiter des pesées bruitées : filtrage EM pour séparer points fiables/outliers, agrégation journalière robuste, puis ajustement logistique.
+Ce travail a proposé une méthodologie pour traiter des données de pesée automatique fortement bruitées, combinant le modèle de contamination de Huber avec l'algorithme EM pour identifier les mesures fiables, suivi d'un ajustement logistique pour modéliser l'évolution du poids.
 
-**Bilan des résultats :**
+L'algorithme EM a permis de détecter en moyenne 42,5% d'outliers sur les 105 brebis analysées, avec une forte variabilité entre individus (écart-type de 14,8%). Cette proportion élevée confirme les défaillances du système de pesée automatique, notamment lorsque plusieurs brebis montent simultanément sur la balance ou qu'une brebis n'est que partiellement positionnée. La visualisation graphique montre que l'algorithme sépare efficacement les mesures surestimées, bien que les valeurs sous-estimées restent plus difficiles à détecter.
 
-- **Nettoyage EM** : le mélange de Huber retire efficacement les pesées aberrantes (cas multi-brebis ou mauvaise pose), ce qui stabilise les médianes quotidiennes.
-- **Régression logistique** : la courbe suit bien les brebis à tendance nette (ex. 251, plateau ~50 kg). Sur des séries très dispersées (ex. 266), le modèle reste croissant mais l'asymptote est tirée vers le haut, révélant la sensibilité aux points extrêmes.
-- **Variabilité individuelle** : les paramètres varient fortement d'une brebis à l'autre, reflet des différences de croissance et de la qualité de mesure.
+La régression logistique, appliquée après filtrage, reconstruit des trajectoires de croissance cohérentes pour la majorité des brebis. Les exemples des brebis 634 et 004 illustrent deux situations : un ajustement quasi parfait pour les séries de bonne qualité (croissance régulière de 24 à 33 kg pour la brebis 634), et un ajustement plus approximatif mais informatif pour les données dispersées (brebis 004). Cette hétérogénéité explique les écarts-types très élevés des paramètres globaux et souligne l'importance d'une analyse individuelle.
 
-**Limites  :**
+Le modèle présente cependant deux limitations principales : le mélange gaussien détecte surtout les outliers hauts et peut laisser passer des valeurs anormalement basses, et l'ajustement logistique reste sensible aux points extrêmes résiduels pour les séries très bruitées.
 
-- Le mélange à deux composantes détecte surtout les outliers hauts et peut laisser passer des valeurs trop basses.
-- L'ajustement logistique reste sensible aux valeurs extrêmes, en particulier sur des séries très bruitées.
-
-En pratique, la combinaison EM + agrégation robuste + logistique améliore nettement la lisibilité des trajectoires de poids, tout en gardant une marge de progrès sur la robustesse face aux dispersions extrêmes.
+Malgré ces limites, la chaîne de traitement proposée améliore significativement l'exploitabilité des données et permet d'obtenir des courbes de croissance fiables pour suivre l'évolution pondérale des brebis au cours du temps.
