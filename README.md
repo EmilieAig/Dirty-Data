@@ -61,14 +61,6 @@ Analyse et modélisation de l'évolution du poids de brebis à partir de mesures
    - Ajustement d'une courbe logistique : $f(t) = \frac{L}{1 + e^{-k(t-t_0)}} + b$
    - Modélisation de la croissance des brebis sur 3 mois
 
-**Résultats** :
-- Séparation efficace entre mesures fiables et outliers pour la majorité des brebis
-- Courbes de croissance cohérentes capturant l'évolution pondérale
-- Identification de brebis à croissance nette vs. brebis à données très bruitées
-- Limitation : le modèle EM ne prend pas en compte l'évolution temporelle, entraînant une sur-détection d'outliers en fin de période
-
----
-
 ## Technologies utilisées
 
 - **Langage** : [Julia](https://julialang.org/) 1.x
