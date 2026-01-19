@@ -571,20 +571,41 @@ Nous remarquons également que très peu d'outliers sont détectés en dessous d
 
 ## Régression logistique
 
-Une fois les outliers identifiés par l'algorithme EM, nous pouvons maintenant modéliser l'évolution temporelle du poids de chaque brebis. Pour cela, nous utilisons une fonction logistique qui capture bien la dynamique de croissance suivie d'une stabilisation.
+### Choix du modèle
 
-La fonction logistique est définie comme :
+Après avoir identifié les mesures fiables grâce à l'algorithme EM, nous modélisons l'évolution du poids de chaque brebis au cours du temps. Plusieurs modèles de croissance sont envisageables (linéaire, quadratique, exponentiel), mais le **modèle logistique** présente des avantages décisifs pour notre cas d'usage :
 
-$$f(t) = \frac{L}{1 + e^{-k(t-t_0)}}$$
+- Contrairement au modèle linéaire qui prédirait une croissance infinie, ou au modèle exponentiel qui explose rapidement, la logistique reflète les contraintes réelles .
 
-où :
+La courbe logistique avec biais s'écrit :
 
-- $L$ est la limite supérieure du poids (poids maximal asymptotique).
-- $k$ est le taux de croissance.
-- $t_0$ est le temps au point d'inflexion (où la croissance est maximale).
-- $t$ est le temps (en jours depuis le début des mesures).
+$$f(t) = \frac{L}{1 + e^{-k(t-t_0)}} + b$$
 
-Nous implémentons une fonction qui, pour chaque brebis commence par appliquer l'algorithme EM pour identifier les mesures fiables. Ensuite, qui agrège les mesures par jour en calculant une médiane pondérée. Enfin, qui ajuste une fonction logistique par régression non linéaire.
+Les quatre paramètres ont les interprétations suivantes :
+
+- **$L$ (amplitude)** : la différence entre le poids maximal asymptotique et le biais de base.
+- **$k$ (taux de croissance)** : la vitesse à laquelle le poids augmente ; plus $k$ est grand, plus la transition vers le plateau est rapide.
+- **$t_0$ (point d'inflexion)** : le moment où la croissance est maximale, correspondant au passage de la phase d'accélération à la phase de décélération.
+- **$b$ (biais vertical)** : un décalage vertical permettant d'ajuster le niveau de base de la courbe.
+
+### Méthode des moindres carrés non linéaires
+
+L'ajustement du modèle logistique repose sur la **régression non linéaire par moindres carrés**. Étant donné $n$ mesures agrégées $(t_i, y_i)$ pour $i = 1, \ldots, n$, nous cherchons les paramètres $\theta = (L, k, t_0, b)$ qui minimisent la somme des carrés des résidus :
+
+$$\min_{\theta} \sum_{i=1}^n \left( y_i - f(t_i; \theta) \right)^2$$
+
+Contrairement à la régression linéaire classique où la solution analytique est donnée par l'équation normale $\theta = (X^T X)^{-1} X^T y$, il n'existe pas de formule fermée pour les modèles non linéaires. Nous devons recourir à des **algorithmes d'optimisation itératifs** :
+
+1. **Initialisation** : choix de valeurs de départ raisonnables pour les paramètres (par exemple $L = \max(y_i)$, $t_0 = \text{médiane}(t_i)$, $k = 0.1$, $b = 0$).
+2. **Itérations** : l'algorithme (Levenberg-Marquardt dans notre cas via `LsqFit.jl`) ajuste progressivement les paramètres en calculant le gradient de la fonction de coût et en se déplaçant dans la direction qui réduit l'erreur.
+3. **Convergence** : l'algorithme s'arrête lorsque les améliorations deviennent négligeables, garantissant un minimum local (pas nécessairement global, d'où l'importance d'une bonne initialisation).
+
+### Procédure d'ajustement
+
+Pour chaque brebis, nous appliquons la procédure suivante :
+1. **Filtrage EM** : calcul des probabilités que chaque mesure soit valide.
+2. **Agrégation journalière** : pour chaque jour, on retient le 65ᵉ percentile des mesures jugées fiables (probabilité > 0,6 et poids dans [15, 55] kg).
+3. **Ajustement logistique** : régression non linéaire par moindres carrés pour estimer les paramètres $(L, k, t_0, b)$.
 
 ```{julia}
 
@@ -636,19 +657,18 @@ end
 
 println("Régression logistique ajustée pour $(length(resultats_regression)) brebis")
 
-# Statistiques sur les paramètres
-params_L = [res.L for res in values(resultats_regression)]
-params_k = [res.k for res in values(resultats_regression)]
-params_t0 = [res.t0 for res in values(resultats_regression)]
+# Statistiques sur les paramètres (médiane robuste aux valeurs extrêmes)
+# Note : L et b sont sur-paramétrés (compensation mutuelle), on filtre les valeurs aberrantes
+params_L = [res.L for res in values(resultats_regression) if 10 <= res.L <= 80]
+params_k = [res.k for res in values(resultats_regression) if 10 <= res.L <= 80]
+params_t0 = [res.t0 for res in values(resultats_regression) if 10 <= res.L <= 80]
 
-println("\nParamètres de la régression logistique :")
-println("  - L (limite supérieure) : $(r(mean(params_L))) ± $(r(std(params_L))) kg")
-println("  - k (taux de croissance) : $(r(mean(params_k))) ± $(r(std(params_k)))")
-println("  - t0 (point d'inflexion) : $(r(mean(params_t0))) ± $(r(std(params_t0))) jours")
+
+end
 
 ```
 
-Ces statistiques globales révèlent une très forte hétérogénéité dans les trajectoire de croissance du poids des brebis (les écart-stypes sont très élevés pour les trois paramètres). De plus, cela indique que la plupart des courbes restent peu pentues : la moyenne de $k$ est presque nulle, signe que l'ajustement privilégie des pentes très faibles sur de nombreuses brebis (données bruitées ou tendance faible). Le $L$ moyen élevé ($\simeq$ 62 kg) avec un écart-type de 12 kg reflète des asymptotes tirées vers le haut par des points extrêmes ou des séries dispersées (cf. brebis 266). Le $t_0$ médian ($\simeq$ 10 jours) avec forte variabilité montre que le point d'inflexion est souvent positionné très tôt, conséquence des bornes et du manque de croissance marquée : la courbe se cale vite et reste quasiment linéaire.
+L'analyse des paramètres ajustés révèle une forte variabilité entre les brebis. Le paramètre $L$ (limite supérieure) varie considérablement d'un animal à l'autre, reflétant à la fois les différences réelles de gabarit et la sensibilité du modèle aux points extrêmes dans les données agrégées. Le taux de croissance $k$ reste généralement faible, ce qui est cohérent avec la courte période d'observation (3 mois) où les brebis adultes présentent une croissance limitée. Le point d'inflexion $t_0$ se situe souvent en début de période, suggérant que la majorité de la variation de poids observée se produit dans les premières semaines.
 
 Pour mieux comprendre la performance du modèle, il est donc nécessaire d'examiner les ajustements individuels plutôt que de se fier aux statistiques agrégées. Nous visualisons ci-dessous les résultats pour nos deux brebis d'exemple.
 
@@ -659,11 +679,18 @@ Pour mieux comprendre la performance du modèle, il est donc nécessaire d'exami
 res1 = resultats_regression[brebis1]
 res2 = resultats_regression[brebis2]
 
+# Récupérer les dates pour chaque brebis
+data_b1 = filter(r -> r.RFID == brebis1, data_filtree)
+data_b2 = filter(r -> r.RFID == brebis2, data_filtree)
+
+date_min1 = minimum(data_b1.rdate)
+date_min2 = minimum(data_b2.rdate)
+
 # Graphique brebis 1
 p1 = scatter(
     res1.temps,
     res1.poids,
-    xlabel = "Temps (jours)",
+    xlabel = "Date (depuis $(date_min1))",
     ylabel = "Poids (kg)",
     title = "Brebis $(brebis1[end-2:end]) - Régression logistique",
     label = "Mesures agrégées",
@@ -677,7 +704,7 @@ temps_lisse1 = range(minimum(res1.temps), maximum(res1.temps), length=100)
 poids_ajuste1 = res1.L ./ (1 .+ exp.(-res1.k .* (temps_lisse1 .- res1.t0))) .+ res1.b
 
 plot!(p1, temps_lisse1, poids_ajuste1, 
-      label = "Courbe logistique", 
+      label = "Courbe logistique ", 
       color = :red, 
       linewidth = 2)
 
@@ -685,7 +712,7 @@ plot!(p1, temps_lisse1, poids_ajuste1,
 p2 = scatter(
     res2.temps,
     res2.poids,
-    xlabel = "Temps (jours)",
+    xlabel = "Date (depuis $(date_min2))",
     ylabel = "Poids (kg)",
     title = "Brebis $(brebis2[end-2:end]) - Régression logistique",
     label = "Mesures agrégées",
@@ -707,13 +734,13 @@ plot(p1, p2, layout = (2, 1), size = (700, 600))
 
 ```
 
-Les graphiques montrent l'ajustement de la fonction logistique sur les mesures agrégées (points bleus) pour chaque brebis. La courbe rouge représente le modèle logistique ajusté qui capture l'évolution du poids au cours du temps.
+Les graphiques ci-dessus illustrent l'ajustement de la fonction logistique (courbe rouge) sur les mesures quotidiennes agrégées (points bleus) pour deux brebis représentatives.
 
-Pour le brebis 634, l'ajustement logistique semble plutôt réussi. Les points suivent fidèlement la courbe rouge, qui décrit une croissance progressive du poids depuis environ 25 kg en début de période jusqu'à environ 33 kg à la fin.
+Pour la **brebis 634**, le modèle capture bien une croissance régulière du poids au fil du temps. Les points agrégés forment un nuage relativement compact, et la courbe logistique suit cette tendance ascendante de manière cohérente. Le plateau estimé reflète un poids stabilisé en fin de période d'observation.
 
-Pour la brebis 004, la situation est plus contrastée. Bien que la courbe logistique parvienne à capturer la tendance générale à la hausse (de 28 kg à environ 32 kg), nous observons une dipsersion verticale importante des points. Cette variabilité peut s'expliquer par plusieurs facteurs : soit cette brebis présente des fluctuations de poids plus marquées, soit les mesures pour cet individu contiennent davantage de bruit résiduel après le filtrage EM. Néanmoins, la courbe rouge parvient à identifier une trajectoire en forme de S caractéristique de la fonction logistique : avec une phase de croissance lente au départ, une accélération autour de 40 jours, puis un ralentissement progressif vers le plateau.
+Pour la **brebis 004**, les données présentent une dispersion plus importante. Bien que le modèle identifie une tendance globale à la hausse, la forte variabilité des mesures quotidiennes rend l'ajustement moins précis. Le paramètre $L$ est tiré vers le haut par quelques points extrêmes, ce qui souligne la sensibilité du modèle aux outliers résiduels malgré le filtrage EM.
 
-Ces deux exemples illustrent la dualité des résultats : lorsque les données sont de bonne qualité après filtrage (commepour la brebis 634), le modèle logistique offre un bon ajustement et permet une prédiction fiable du poids. En revanche, pour les brebis présentant des mesures plus dispersées (comme la brebis 004), la précision des prédiction est limité par la variabilité des données (bien que le modèle reste information sur la tendance générale).
+Ces deux exemples illustrent que la qualité de l'ajustement dépend fortement de la dispersion des données individuelles de chaque brebis.
 
 # Conclusion
 
