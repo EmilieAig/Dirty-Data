@@ -42,8 +42,6 @@ Analyse et modélisation de l'évolution du poids de brebis à partir de mesures
 **Données** :
 - **Source** : Balance connectée automatique (bergerie d'Arles)
 - **Période** : 27 janvier 2021 - 29 avril 2021 (~3 mois)
-- **Fréquence d'échantillonnage** : ~3 pesées par jour par brebis
-- **Variables mesurées** : RFID (identifiant brebis), date, heure, poids (kg)
 - **Effectif** : 107 brebis, 32 361 mesures au total
 
 **Méthodologie** :
