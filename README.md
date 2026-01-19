@@ -29,8 +29,6 @@ Analyse de données de capteurs mesurant la concentration en **chlorophylle** et
 - Analyse comparative avant/après lissage
 - Détection des pics de concentration (blooms algaux)
 
----
-
 ### 2. Régression Non Linéaire sur le Poids des Brebis
 
 Analyse et modélisation de l'évolution du poids de brebis à partir de mesures automatiques issues d'une balance connectée. Les données présentent de nombreuses valeurs aberrantes dues aux limitations du système de pesée (brebis partiellement sur la balance, plusieurs brebis simultanément, etc.).
