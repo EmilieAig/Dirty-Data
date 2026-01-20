@@ -319,10 +319,10 @@ function em_huber(data; max_iter=50)
     n = length(data)
     
     # Initialisation
-    m1 = median(data)            # Médiane des vraies valeurs
-    sigma1 = max(std(data) * 0.5, 0.1)
-    m0 = mean(filter(x -> abs(x - m1) > 2*sigma1, data))  # Moyenne des outliers
-    sigma0 = max(std(data) * 2, 0.1)
+    m1 = median(data)                    # Médiane des vraies valeurs
+    sigma1 = max(std(data) * 0.5, 0.1)   # Moitié de l'écart-type
+    m0 = mean(filter(x -> abs(x - m1) > sigma1, data))  # Moyenne des outliers (points supérieurs à l'écart type par rapport à la moyenne)
+    sigma0 = max(std(data), 0.1)
     epsilon = 0.2                 # 20% d'outliers
     
     for iter in 1:max_iter
@@ -390,9 +390,9 @@ println("-> $(sum(outliers_2)) outliers détectés sur $(length(outliers_2)) mes
 
 L'application de l'algorithme EM sur nos deux brebis donne les résultats suivants.
 
-Pour la brebis numéro 634, l'algorithme identifie une distribution principale centrée autour de 28,3 kg avec un écart-type de 3,7 kg, représentant les mesures fiables du poids réel. La distribution contaminante est centrée sur 45,4 kg avec un écart-type beaucoup plus important (7,4 kg), correspondant aux mesures erronées où l'on suppose que plusieurs brebis sont montées sur la balance. L'algorithme estime que 28,4% des mesures sont des outliers. En appliquant un seuil de classification à 0,5, nous identifions effectivement 43 outliers sur 162 mesures (26,5%).
+Pour la brebis numéro 634, l'algorithme identifie une distribution principale centrée autour de 28,3 kg avec un écart-type de 3,7 kg, représentant les mesures fiables du poids réel. La distribution contaminante est centrée sur 44,9 kg avec un écart-type beaucoup plus important (7,7 kg), correspondant aux mesures erronées où l'on suppose que plusieurs brebis sont montées sur la balance. L'algorithme estime que 29,4% des mesures sont des outliers. En appliquant un seuil de classification à 0,5, nous identifions effectivement 43 outliers sur 162 mesures (26,5%).
 
-En ce qui concerne la brebis numéro 004, la distribution principale est centrée sur 29,7 kg avec un écart-type de 2,3 kg. La distribution contaminante est centrée sur 41,7 kg et présente également une forte variabilité (10,8 kg). L'algorithme estime que 65,6% des mesures sont des outliers, soit 199 mesures détectées sur 341 (58,4%). Cette brebis présente donc une proportion d'outliers nettement plus élevée que la première, reflétant une qualité de mesure bien plus dégradée.
+En ce qui concerne la brebis numéro 004, la distribution principale est centrée sur 29,7 kg avec un écart-type de 2,3 kg. La distribution contaminante est centrée sur 41,6 kg et présente également une forte variabilité (10,8 kg). L'algorithme estime que 65,6% des mesures sont des outliers, soit 199 mesures détectées sur 341 (58,4%). Cette brebis présente donc une proportion d'outliers nettement plus élevée que la première, reflétant une qualité de mesure bien plus dégradée.
 
 Les différences observées entre $\epsilon$ et les outliers effectivement détectés s'expliquent par la présence de mesures dont la probabilité $\tau_i$ est proche du seuil de 0,5 : ces mesures contribuent à faire monter $\epsilon$ tout en n'étant pas classées comme outliers car elles ne dépassent pas tout à fait ce seuil.
 
@@ -657,9 +657,6 @@ end
 
 println("Régression logistique ajustée pour $(length(resultats_regression)) brebis")
 
-
-
-end
 
 ```
 
