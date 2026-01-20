@@ -594,15 +594,15 @@ Les quatre paramètres ont les interprétations suivantes :
 
 ### Méthode des moindres carrés non linéaires
 
-L'ajustement du modèle logistique repose sur la **régression non linéaire par moindres carrés**. Étant donné $n$ mesures agrégées $(t_i, y_i)$ pour $i = 1, \ldots, n$, nous cherchons les paramètres $\theta = (L, k, t_0, b)$ qui minimisent la somme des carrés des résidus :
+L'ajustement du modèle logistique repose sur la régression non linéaire par moindres carrés. Étant donné $n$ mesures agrégées $(t_i, y_i)$ pour $i = 1, \ldots, n$, nous cherchons les paramètres $\theta = (L, k, t_0, b)$ qui minimisent la somme des carrés des résidus :
 
 $$\min_{\theta} \sum_{i=1}^n \left( y_i - f(t_i; \theta) \right)^2$$
 
-Contrairement à la régression linéaire classique où la solution analytique est donnée par l'équation normale $\theta = (X^T X)^{-1} X^T y$, il n'existe pas de formule fermée pour les modèles non linéaires. Nous devons recourir à des **algorithmes d'optimisation itératifs** :
+Contrairement à la régression linéaire classique où la solution analytique est donnée par l'équation normale $\theta = (X^T X)^{-1} X^T y$, il existe plusieurs solutions numériques pour les modèles non linéaires. Nous recourons à des algorithmes d'optimisation itératifs :
 
-1. **Initialisation** : choix de valeurs de départ raisonnables pour les paramètres (par exemple $L = \max(y_i)$, $t_0 = \text{médiane}(t_i)$, $k = 0.1$, $b = 0$).
-2. **Itérations** : l'algorithme (Levenberg-Marquardt dans notre cas via `LsqFit.jl`) ajuste progressivement les paramètres en calculant le gradient de la fonction de coût et en se déplaçant dans la direction qui réduit l'erreur.
-3. **Convergence** : l'algorithme s'arrête lorsque les améliorations deviennent négligeables, garantissant un minimum local (pas nécessairement global, d'où l'importance d'une bonne initialisation).
+1. Initialisation : choix de valeurs de départ raisonnables pour les paramètres (par exemple $L = \max(y_i)$, $t_0 = \text{médiane}(t_i)$, $k = 0.1$, $b = 0$).
+2. Itérations : l'algorithme (Levenberg-Marquardt dans notre cas via `LsqFit.jl`) ajuste progressivement les paramètres en calculant le gradient de la fonction de coût et en se déplaçant dans la direction qui réduit l'erreur.
+3. Convergence: l'algorithme s'arrête lorsque les améliorations deviennent négligeables, garantissant un minimum local (pas nécessairement global, d'où l'importance d'une bonne initialisation).
 
 ### Procédure d'ajustement
 
@@ -662,17 +662,9 @@ end
 
 println("Régression logistique ajustée pour $(length(resultats_regression)) brebis")
 
-# Statistiques sur les paramètres (médiane robuste aux valeurs extrêmes)
-# Note : L et b sont sur-paramétrés (compensation mutuelle), on filtre les valeurs aberrantes
-params_L = [res.L for res in values(resultats_regression) if 10 <= res.L <= 80]
-params_k = [res.k for res in values(resultats_regression) if 10 <= res.L <= 80]
-params_t0 = [res.t0 for res in values(resultats_regression) if 10 <= res.L <= 80]
-
 ```
 
-L'analyse des paramètres ajustés révèle une forte variabilité entre les brebis. Le paramètre $L$ (limite supérieure) varie considérablement d'un animal à l'autre, reflétant à la fois les différences réelles de gabarit et la sensibilité du modèle aux points extrêmes dans les données agrégées. Le taux de croissance $k$ reste généralement faible, ce qui est cohérent avec la courte période d'observation (3 mois) où les brebis adultes présentent une croissance limitée. Le point d'inflexion $t_0$ se situe souvent en début de période, suggérant que la majorité de la variation de poids observée se produit dans les premières semaines.
-
-Pour mieux comprendre la performance du modèle, il est donc nécessaire d'examiner les ajustements individuels plutôt que de se fier aux statistiques agrégées. Nous visualisons ci-dessous les résultats pour nos deux brebis d'exemple.
+Pour  comprendre la performance du modèle, nous allons examiner les ajustements individuels . Nous visualisons ci-dessous les résultats pour nos deux brebis d'exemple.
 
 ```{julia}
 
@@ -740,7 +732,7 @@ Les graphiques ci-dessus illustrent l'ajustement de la fonction logistique (cour
 
 Pour la **brebis 634**, le modèle capture bien une croissance régulière du poids au fil du temps. Les points agrégés forment un nuage relativement compact, et la courbe logistique suit cette tendance ascendante de manière cohérente. Le plateau estimé reflète un poids stabilisé en fin de période d'observation.
 
-Pour la **brebis 004**, les données présentent une dispersion plus importante. Bien que le modèle identifie une tendance globale à la hausse, la forte variabilité des mesures quotidiennes rend l'ajustement moins précis. Le paramètre $L$ est tiré vers le haut par quelques points extrêmes, ce qui souligne la sensibilité du modèle aux outliers résiduels malgré le filtrage EM.
+Pour la **brebis 004**, les données présentent une dispersion plus importante. Bien que le modèle identifie une tendance globale à la hausse, la forte variabilité des mesures quotidiennes rend l'ajustement moins précis. 
 
 Ces deux exemples illustrent que la qualité de l'ajustement dépend fortement de la dispersion des données individuelles de chaque brebis.
 
