@@ -1,0 +1,189 @@
+---
+title: |
+  ![](SSD.png){width=120px style="float:left; margin-right:20px;"} 
+  ![](Univ_Mtp.png){width=120px style="float:right; margin-left:20px;"}
+  
+  <div style="text-align: center; clear: both; padding-top: 1rem; color: #6495ED;">
+  TP n°3 : Prédiction de l'ozone
+  </div>
+subtitle: |
+  <div style="text-align: center; clear: both; padding-top: 1rem;">
+  HAX004X - Dirty Data
+  </div>
+author: 
+    - name: AIGOIN Emilie
+    - name: LABOURAIL Célia
+date: today
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: right
+    title-block-banner: true
+    number-sections: true
+    code-fold: true
+    code-tools: false
+    code-copy: true
+    df-print: paged
+    embed-resources: false
+    highlight-style: github
+execute:
+  engine: jupyter
+  echo: true
+  warning: false
+  message: false
+  cache: false
+lang: fr
+---
+
+<style>
+/* Titre principal */
+.quarto-title-block .quarto-title {
+  color: #6495ED !important;
+}
+
+/* Numéros de sections */
+.header-section-number {
+  color: #6495ED !important;
+}
+
+/* Traits horizontaux */
+hr {
+  border-color: #2563eb !important;
+  border-width: 2px !important;
+}
+
+/* Texte en justifié */
+body, p {
+  text-align: justify;
+  text-justify: inter-word;
+}
+</style>
+
+# Introduction
+
+***
+
+Ce rapport présente notre travail sur des données météorologiques et plus précisément sur des concentratio, en ozone. Notre objectif était de produire une méthode de régression qui prédit le taux d'ozone en fonction des autres variables mesurées.
+
+Le long de ce travail, nous utiliserons le langage de programmation [Julia](https://julialang.org/), qui permet les applications de calcul numérique et la visualisation graphique. Tout nos codes sont disponibles en opensource sur notre page Github via [ce lien](https://github.com/EmilieAig/Dirty-Data).
+
+# Visualisation des données
+
+***
+
+Tout d'abord, afin de comprendre un peu mieux notre jeu de données, nous avons commencé par effectuer des visualisations. Pour cela, nous commençons par charger les bibliothèques nécessaires à la manipulation des données et à leur visualisation.
+
+```{julia}
+
+# Importer les packages
+
+using CSV
+using DataFrames
+using Dates
+using Plots
+
+```
+
+Les données sont ensuite importées dans un tableau (dataframe), ce qui va nous permettre une manipulation structurée de nos données.
+
+```{julia}
+
+# Importer les données
+
+data = CSV.read("ozoneNA.csv", DataFrame)
+first(data, 5)
+
+```
+
+Suite à l'importation de nos données sous forme d'un dataframe Julia et la visualisation des cinq premières lignes, nous observons 13 variables principales : 
+
+- La date de la mesure (`Column1`).
+- Le taux d'Ozone mesuré (`maxO3`).
+- Le taux d'Ozone mesuré la veille (`maxO3v`).
+- La direction du vent (`WindDirection`).
+- Les autres variables mesurées (`T9`, `T12`, `T15`, `Ne9`, `Ne12`, `Ne15`, `Vx9`, `Vx12`, `Vx15`).
+
+De plus, nous remarquons que la colonne de date est de type `Int64` ce qui empêche toute manipulation temporelle. De même, les valeurs de nos variables sont toutes en format `String` même si ce sont des valeurs numériques car les colonnes contiennent des valeurs maquantes (`NA`.) Ainsi, nous convertissons la colonne des dates en format `Date` afin de permettre des opérations temporelles telles que l'agrégation ou la représentation graphique en fonction du temps et les autres colonnes en `Float64`.
+
+```{julia}
+
+# Conversion des dates
+data.Column1 = Date.(string.(data.Column1), dateformat"yyyymmdd")
+
+# Conversion des autres colonnes
+col_conversion = [:maxO3, :maxO3v, :T9, :T12, :T15, :Ne9, :Ne12, :Ne15, :Vx9, :Vx12, :Vx15]
+
+for col in col_conversion
+    data[!, col] = replace(data[!, col], "NA" => missing) # Remplacer NA par missing
+    data[!, col] = passmissing(parse).(Float64, data[!, col])
+end
+
+println("Premières lignes :")
+display(first(data, 5))
+
+println("\nDernières lignes :")
+display(last(data, 5))
+
+```
+
+Nous voyons que les conversions ont bien fonctionnées. De plus, nous pouvons voir que nous avons accès à des mesures prises du 1er juin 2001 au 30 septembre 2001 ce qui couvre une période d'environ 4 mois.
+
+En observant ces premières et dernières lignes de notre jeu de données, nous constatons la présence de nombreuses valeurs manquantes (`NA`) réparties sur plusieurs variables. Ces valeurs manquantes constituent un problème important pour notre analyse car elles peuvent affecter la qualité de nos prédictions et biaiser nos résultats.
+
+Afin de mieux comprendre la structure de notre jeu de données, nous allons commencer par faire des visualisations graphiques qui nous permettront d'observer les distribution et les relations entre ldes différentes variables.
+
+Pour commencer notre exploration visuelle, nous allons créer un graphique simple qui représente l'évolution du taux d'ozone (notre variable cible) au cours du temps. Cette visualisation nous permettra d'identifier d'éventuelles tendances saisonnières ou des périodes particulières.
+
+```{julia}
+
+# Graphique de l'évolution du taux d'ozone dans le temps
+
+plot(data.Column1, data.maxO3v, 
+     label = "Taux d'ozone maximal", 
+     xlabel = "Date", 
+     ylabel = "Concentration d'ozone (maxO3)",
+     title = "Evolution du taux d'ozone de juin à septembre 2001",
+     linewidth = 2,
+     color = "#6495ED",
+     legend = :topleft,
+     size = (800, 400))
+
+```
+
+Nous observons plusieurs éléments intéressants dans l'évolution du taux d'ozone entre juin et septembre 2001. Premièrement, il existe une forte variabilité avec des fluctuations importantes : les concentrations oscillent généralement entre 55 et 125, avec quelques pics pouvant atteindre 160. Deuxièmement, nous ne distinguons pas de tendance nette à la hausse ou à la baisse sur l'ensemble de la période. Enfin, nous constatons la présence de nombreuses discontinuités dans la courbe, visibles par les sauts brusques entre certains points. Ces ruptures correspondent aux valeurs manquantes dans notre jeu de données, qui créent des trous dans la série temporelle. Cette observation graphique confirme l'importance du problème des données manquantes déjà identifié lors de l'analyse du tableau de données.
+
+Ainsi, avant de procéder à toute modélisation, il est indispensable de quantifier la proportion des données manquantes dans notre jeu de données. Cette analyse permettra de choisir la méthode de traitement la plus appropriée pour supprimer/imputer ces valeurs tout en préservant l'intégrité de nos données.
+
+```{julia}
+
+# Calculer la proportion de valeurs manquantes par variable
+
+n_total = nrow(data)
+
+println("Proportion de valeurs manquantes par variable :\n")
+
+for col in names(data)
+    n_missing = count(ismissing, data[!, col])
+    prop_missing = round(n_missing / n_total * 100, digits=2)
+    println("$col : $n_missing ($prop_missing%)")
+end
+
+```
+
+Cette analyse révèle que les valeurs manquantes sont inégalement réparties dans notre jeu de données. Nous observons que les variables de date et de direction du vent sont complètes, sans aucune valeur manquante. En revanche, les autres variables présentent des taux de données manquantes relativement élevés, allant de 8,93% pour `Vx12` jusqu'à 37,5% pour `Ne12`. 
+
+Plus précisément, les variables `T` et `Ne` comportent environ 30% de valeurs manquantes, ce qui représente une proportion très importante. Concernant notre variable cible de taux d'Ozone, nous constatons un taux de 14,29% de données manquantes, tandis que le taux d'ozone de la veille présente un taux légèrement inférieur de 10,71%. Les variables `Vx` montrent des taux plus modérés, variant entre 9% et 19%. 
+
+Cette situation nécessite une réflexion approfondie sur la stratégie à adopter, c'est-à-dire décider si nous devons supprimer les observations incomplètes au risque de perdre une partie importante de nos données, imputer les valeurs manquantes en introduisant potentiellement un biais, ou adopter une approche combinée selon les variables.
+
+# Traitement des valeurs manquantes
+
+***
+
+
+
+
+
