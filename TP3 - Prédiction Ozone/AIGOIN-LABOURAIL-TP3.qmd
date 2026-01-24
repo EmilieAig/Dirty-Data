@@ -84,6 +84,8 @@ using CSV
 using DataFrames
 using Dates
 using Plots
+using Statistics
+using Interpolations
 
 ```
 
@@ -180,6 +182,126 @@ Plus précisément, les variables `T` et `Ne` comportent environ 30% de valeurs 
 Cette situation nécessite une réflexion approfondie sur la stratégie à adopter, c'est-à-dire décider si nous devons supprimer les observations incomplètes au risque de perdre une partie importante de nos données, imputer les valeurs manquantes en introduisant potentiellement un biais, ou adopter une approche combinée selon les variables.
 
 # Traitement des valeurs manquantes
+
+***
+
+Compte tenu de l'analyse précédente, nous avons dû trouver une stratégie pour traiter les valeurs manquantes. Étant donné que certaines variables présentent jusqu'à 37,5% de données manquantes, supprimer toutes les lignes incomplètes nous ferait perdre une part trop importante de notre jeu de données. Nous avons donc décidé d'adopter une approche mixte en deux étapes.
+
+Tout d'abord, la suuppression sélective de certaines valeurs manquantes. Nous supprimons uniquement les lignes où la variable cible (`maxO3`) est manquante, car il est impossible de prédire une valeur que nous ne connaissons pas. Cela représente environ 14% des données.
+
+Deuxièmement, pour les variables explicatives restantes, nous utiliserons l'interpolation linéaire. Nous justifions ce choix par la nature temporelle de nos données météorologiques. En effet, les variables comme la température ou le vent évoluent de manière relativement continue dans le temps. L'interpolation linéaire permet donc d'estimer les valeurs manquantes en supposant une transition progressive entre deux mesures consécutives.
+
+Cette approche nous permettra de conserver un maximum de données tout en maintenant la cohérence temporelle de notre analyse.
+
+```{julia}
+
+# Traitement des valeurs manquantes
+
+# Supprimer les lignes où maxO3 est manquant
+println("Nombre de lignes avant suppression : ", nrow(data))
+data_clean = dropmissing(data, :maxO3)
+println("Nombre de lignes après suppression des maxO3 manquants : ", nrow(data_clean), "\n")
+
+# Imputation par interpolation linéaire pour les autres variables
+
+for col in names(data_clean)
+    # On ne traite pas la date et les variables déjà complètes
+    if col != "Column1" && col != "WindDirection"
+        n_missing_before = count(ismissing, data_clean[!, col])
+        
+        if n_missing_before > 0
+            # Identifier les indices des valeurs non-manquantes
+            non_missing_idx = findall(!ismissing, data_clean[!, col])
+            non_missing_values = [data_clean[i, col] for i in non_missing_idx]
+            
+            if length(non_missing_values) >= 2
+                # Créer une interpolation linéaire
+                itp = LinearInterpolation(non_missing_idx, non_missing_values, extrapolation_bc=Line())
+                
+                # Remplacer les valeurs manquantes par interpolation
+                for i in 1:nrow(data_clean)
+                    if ismissing(data_clean[i, col])
+                        data_clean[i, col] = itp(i)
+                    end
+                end
+                
+                println("$col : $n_missing_before valeurs imputées par interpolation linéaire")
+            end
+        end
+    end
+end
+
+# Vérification finale
+total_missing = sum(count(ismissing, data_clean[!, col]) for col in names(data_clean))
+println("\nNombre total de valeurs manquantes restantes : $total_missing")
+
+```
+
+Nous pouvons voir que nous avons supprimé 16 lignes correspondant aux observations où la variable cible `maxO3` était manquante. De plus, nous avons procédé à l'imputation par interpolation linéaire des 231 valeurs manquantes réparties sur les 10 variables explicatives restantes. Les variables de `Ne12` et `T9` ont nécessité le plus d'imputations avec respectivement 35 et 33 valeurs, tandis que les variables `Vx` ont nécessité moins d'interventions avec entre 9 et 18 valeurs imputées. 
+
+La vérification finale confirme qu'il ne reste aucune valeur manquante dans notre jeu de données nettoyé, qui compte désormais 96 lignes complètes. 
+
+Afin de vérifier visuellement la cohérence de notre méthode d'imputation par interpolation linéaire, nous avons créé un graphique illustrant le processus pour la variable `Ne12`, qui présente le plus grand nombre de valeurs manquantes avec 35 imputations. Ce graphique permet d'observer comment les valeurs imputées, représentées en rouge, s'insèrent naturellement entre les valeurs originales, représentées en bleu. La ligne grise relie l'ensemble des points et met en évidence la continuité temporelle de la série après imputation.
+
+```{julia}
+
+# Visualisation de l'imputation pour Ne12
+
+# Recharger les données originales pour comparaison
+data_original = CSV.read("ozoneNA.csv", DataFrame)
+data_original.Column1 = Date.(string.(data_original.Column1), "yyyymmdd")
+
+# Convertir les colonnes numériques
+for col in names(data_original)
+    if col != "Column1" && col != "WindDirection"
+        data_original[!, col] = parse.(Float64, replace.(data_original[!, col], "NA" => "NaN"))
+        data_original[!, col] = ifelse.(isnan.(data_original[!, col]), missing, data_original[!, col])
+    end
+end
+
+# Supprimer les mêmes lignes que dans data_clean
+data_original_filtered = dropmissing(data_original, :maxO3)
+
+# Tracer la ligne grise qui relie tous les points
+p = plot(data_clean.Column1, data_clean.Ne12,
+         label="",
+         xlabel="Date",
+         ylabel="Variable Ne12",
+         title="Visualisation de l'imputation - Variable Ne12",
+         linewidth=1,
+         color=:lightgray,
+         legend=:bottomright,
+         size=(700, 400))
+
+# Identifier les valeurs originales (non manquantes)
+dates_originales = data_clean.Column1[.!ismissing.(data_original_filtered.Ne12)]
+valeurs_originales = data_clean.Ne12[.!ismissing.(data_original_filtered.Ne12)]
+
+# Identifier les valeurs imputées
+dates_imputees = data_clean.Column1[ismissing.(data_original_filtered.Ne12)]
+valeurs_imputees = data_clean.Ne12[ismissing.(data_original_filtered.Ne12)]
+
+# Ajouter les points originaux en bleu
+scatter!(p, dates_originales, valeurs_originales,
+         label="Valeurs originales",
+         color="#6495ED",
+         markersize=4)
+
+# Ajouter les points imputés en rouge
+scatter!(p, dates_imputees, valeurs_imputees,
+         label="Valeurs imputées (n=35)",
+         color=:red,
+         markersize=4)
+
+display(p)
+
+```
+
+Ce graphique illustre l'efficacité de notre méthode d'imputation par interpolation linéaire. Nous observons que les 35 valeurs imputées, représentées en rouge, s'intègrent de manière cohérente avec les valeurs originales en bleu. L'interpolation respecte bien les variations temporelles de la variable. Nous constatons notamment que les valeurs imputées ne présentent pas de ruptures brutales ni de valeurs aberrantes qui détonneraient avec le reste de la série.
+
+Cette visualisation confirme donc que notre approche méthodologique produit des estimations plausibles qui préservent les caractéristiques statistiques de la variable tout en maintenant la continuité temporelle de nos données. Le jeu de données ainsi complété est donc prêt pour la phase de modélisation.
+
+# Modélisation 
 
 ***
 
