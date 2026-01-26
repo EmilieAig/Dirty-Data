@@ -4,7 +4,7 @@ title: |
   ![](Univ_Mtp.png){width=120px style="float:right; margin-left:20px;"}
   
   <div style="text-align: center; clear: both; padding-top: 1rem; color: #6495ED;">
-  TP n°3 : Prédiction de l'ozone
+  TP n°3 : Prédiction de l'Ozone
   </div>
 subtitle: |
   <div style="text-align: center; clear: both; padding-top: 1rem;">
@@ -136,9 +136,9 @@ display(last(data, 5))
 
 Nous voyons que les conversions ont bien fonctionnées. De plus, nous pouvons voir que nous avons accès à des mesures prises du 1er juin 2001 au 30 septembre 2001 ce qui couvre une période d'environ 4 mois.
 
-En observant ces premières et dernières lignes de notre jeu de données, nous constatons la présence de nombreuses valeurs manquantes (`NA`) réparties sur plusieurs variables. Ces valeurs manquantes constituent un problème important pour notre analyse car elles peuvent affecter la qualité de nos prédictions et biaiser nos résultats.
+En observant ces premières et dernières lignes de notre jeu de données, nous constatons la présence de nombreuses valeurs manquantes (`NA` qui ont été transformées en `missing`) réparties sur plusieurs variables. Ces valeurs manquantes constituent un problème important pour notre analyse car elles peuvent affecter la qualité de nos prédictions et biaiser nos résultats.
 
-Afin de mieux comprendre la structure de notre jeu de données, nous allons commencer par faire des visualisations graphiques qui nous permettront d'observer les distribution et les relations entre les différentes variables.
+Afin de mieux comprendre la structure de notre jeu de données, nous allons commencer par faire des visualisations graphiques qui nous permettront d'observer les distributions et les relations entre les différentes variables.
 
 Pour commencer notre exploration visuelle, nous allons créer un graphique simple qui représente l'évolution du taux d'ozone (notre variable cible) au cours du temps. Cette visualisation nous permettra d'identifier d'éventuelles tendances saisonnières ou des périodes particulières.
 
@@ -158,7 +158,7 @@ plot(data.Column1, data.maxO3v,
 
 ```
 
-Nous observons plusieurs éléments intéressants dans l'évolution du taux d'ozone entre juin et septembre 2001. Premièrement, il existe une forte variabilité avec des fluctuations importantes : les concentrations oscillent généralement entre 55 et 125, avec quelques pics pouvant atteindre 160. Deuxièmement, nous ne distinguons pas de tendance nette à la hausse ou à la baisse sur l'ensemble de la période. Enfin, nous constatons la présence de nombreuses discontinuités dans la courbe, visibles par les sauts brusques entre certains points. Ces ruptures correspondent aux valeurs manquantes dans notre jeu de données, qui créent des trous dans la série temporelle. Cette observation graphique confirme l'importance du problème des données manquantes déjà identifié lors de l'analyse du tableau de données.
+Nous observons plusieurs éléments intéressants dans l'évolution du taux d'ozone entre juin et septembre 2001. Premièrement, il existe une forte variabilité avec des fluctuations importantes : les concentrations oscillent généralement entre 55 et 125, avec quelques pics pouvant atteindre 45 ou 160. Deuxièmement, nous ne distinguons pas de tendance nette à la hausse ou à la baisse sur l'ensemble de la période. Enfin, nous constatons la présence de nombreuses discontinuités dans la courbe, visibles par les sauts brusques entre certains points. Ces ruptures correspondent aux valeurs manquantes dans notre jeu de données, qui créent des trous dans la série temporelle. Cette observation graphique confirme l'importance du problème des données manquantes déjà identifié lors de l'analyse du tableau de données.
 
 Ainsi, avant de procéder à toute modélisation, il est indispensable de quantifier la proportion des données manquantes dans notre jeu de données. Cette analyse permettra de choisir la méthode de traitement la plus appropriée pour supprimer/imputer ces valeurs tout en préservant l'intégrité de nos données.
 
@@ -190,7 +190,7 @@ Cette situation nécessite une réflexion approfondie sur la stratégie à adopt
 
 Compte tenu de l'analyse précédente, nous avons dû trouver une stratégie pour traiter les valeurs manquantes. Étant donné que certaines variables présentent jusqu'à 37,5% de données manquantes, supprimer toutes les lignes incomplètes nous ferait perdre une part trop importante de notre jeu de données. Nous avons donc décidé d'adopter une approche mixte en deux étapes.
 
-Tout d'abord, la suppression sélective de certaines valeurs manquantes. Nous supprimons uniquement les lignes où la variable cible (`maxO3`) est manquante, car il est impossible de prédire une valeur que nous ne connaissons pas. Cela représente environ 14% des données.
+Tout d'abord, la suppression sélective de certaines valeurs manquantes. Nous supprimons uniquement les lignes où la variable cible (`maxO3`) est manquante, car il est impossible d'évaluer notre modèle de prédiction sur une valeur que nous ne connaissons pas. Cela représente environ 14% des données.
 
 Deuxièmement, pour les variables explicatives restantes, nous utiliserons l'interpolation linéaire. Nous justifions ce choix par la nature temporelle de nos données météorologiques. En effet, les variables comme la température ou le vent évoluent de manière relativement continue dans le temps. L'interpolation linéaire permet donc d'estimer les valeurs manquantes en supposant une transition progressive entre deux mesures consécutives.
 
@@ -310,7 +310,7 @@ Cette visualisation confirme donc que notre approche méthodologique produit des
 
 Pour débuter la modélisation, nous avons opté pour une approche classique de régression linéaire multiple. Cette méthode permet de modéliser la relation linéaire entre la variable cible `maxO3` et nos variables explicatives.
 
-La régression linéaire multiple a été choisie car elle offre un bon équilibre entre performance et simplicité. Avec 96 observations pour 10 variables explicatives, elle permet d'estimer les coefficients de manière stable sans surapprentissage. De plus, ce modèle fournit des estimations non biaisées et optimales sous les hypothèses classiques (théorème de Gauss-Markov), tout en permettant d'interpréter facilement l'effet de chaque variable météorologique sur l'ozone.
+La régression linéaire multiple a été choisie car elle offre un bon équilibre entre performance et simplicité. Avec 96 observations pour 10 variables explicatives, elle permet d'estimer les coefficients de manière stable sans surapprentissage. De plus, ce modèle fournit des estimations non biaisées et optimales sous les hypothèses classiques (théorème de Gauss-Markov) que nous vérifierons par la suite, tout en permettant d'interpréter facilement l'effet de chaque variable météorologique sur l'ozone.
 
 Premièrement, nous commençons par charger les packages nécessaires pour l'ajustement du modèle et l'évaluation de ses performances.
 
@@ -382,15 +382,15 @@ println("*   : significatif au seuil de 10%")
 
 L'analyse de significativité révèle que parmi les 10 variables explicatives, seulement 2 ont un effet statistiquement significatif au seuil de 5% sur la concentration d'ozone.
 
-La variable `maxO3v` (taux d'ozone de la veille) a un coefficient de 0.35 et une p-value < 0.0001 est le prédicteur le plus fort de notre modèle.
+La variable `maxO3v` (taux d'ozone de la veille) a un coefficient de 0.35 et une p-valeur < 0.0001. Elle est le prédicteur le plus fort de notre modèle.
 
-La variable `Ne9` (nébulosité à 9h) a un coefficient de -2.14 et une p-value de 0.025, ainsi cette variable a bien un effet négatif significatif. Plus la elle est élevée et plus le taux d'ozone diminue.
+La variable `Ne9` (nébulosité à 9h) a un coefficient de -2.14 et une p-valeur de 0.025. Elle a bien un effet négatif significatif : plus elle est élevée et plus le taux d'ozone diminue.
 
-Enfin, la variable `T12` présente une p-value de 0.056, légèrement au-dessus du seuil conventionnel de 5%, mais significative au seuil de 10%. Son coefficient positif de 2.34 suggère qu'une valeur élevée de cette variable favorise la formation d'ozone.
+Enfin, la variable `T12` présente une p-valeur de 0.056, légèrement au-dessus du seuil conventionnel de 5%, mais significative au seuil de 10%. Son coefficient positif de 2.34 suggère qu'une valeur élevée de cette variable favorise la formation d'ozone.
 
-Les autres variables ne montrent pas d'effet statistiquement significatif au seuil de 5%. Leurs p-values élevées (comprises entre 0.19 et 0.64) indiquent que leurs effets apparents pourraient être dus au hasard. Cela ne signifie pas nécessairement qu'elles n'ont aucun effet physique, mais plutôt que cet effet n'est pas détectable avec notre taille d'échantillon ou qu'il est capturé par d'autres variables du modèle (problème potentiel de colinéarité entre les variables).
+Les autres variables ne montrent pas d'effet statistiquement significatif au seuil de 5%. Leurs p-valeurs élevées (comprises entre 0.19 et 0.64) indiquent que leurs effets apparents pourraient être dus au hasard. Cela ne signifie pas nécessairement qu'elles n'ont aucun effet, mais plutôt que cet effet n'est pas détectable avec notre taille d'échantillon ou qu'il est capturé par d'autres variables du modèle (problème potentiel de colinéarité entre les variables).
 
-Ces résultats nous semblent cohérents d'un point de vue météorologique. La forte significativité de `maxO3v` s'explique par la persistance des conditions atmosphériques : les masses d'air et les paramètres météorologiques évoluant de manière progressive, un taux élevé d'ozone un jour donné reflète généralement des conditions qui tendent à se maintenir le lendemain. L'effet négatif de `Ne9` est également logique puisque la formation d'ozone nécessite un rayonnement UV intense pour activer des réactions chimiques. Une couverture nuageuse importante le matin limite ce rayonnement et réduit donc la production d'ozone au cours de la journée. Quant à `T12`, son coefficient positif reflète le double rôle de la température qui accélère les réactions chimiques produisant l'ozone, les températures élevées à midi étant souvent associées aux journées ensoleillées propices aux pics d'ozone.
+Ces résultats nous semblent cohérents d'un point de vue météorologique. La forte significativité de `maxO3v` s'explique par la persistance des conditions atmosphériques : les masses d'air et les paramètres météorologiques évoluant de manière progressive, un taux élevé d'ozone un jour donné reflète généralement des conditions qui tendent à se maintenir le lendemain. L'effet négatif de `Ne9` est également logique puisque la formation d'ozone nécessite un rayonnement UV intense pour activer des réactions chimiques. Enfin, une couverture nuageuse importante le matin limite ce rayonnement et réduit donc la production d'ozone au cours de la journée. Quant à `T12`, son coefficient positif reflète le double rôle de la température qui accélère les réactions chimiques produisant l'ozone, les températures élevées à midi étant souvent associées aux journées ensoleillées propices aux pics d'ozone.
 
 Après l'ajustement du modèle, nous calculons plusieurs métriques de performance pour évaluer la qualité de nos prédictions.
 
@@ -409,7 +409,7 @@ r2 = 1 - (ss_res / ss_tot)
 
 # R^2 ajusté
 n = length(y)
-p = size(X, 10)
+p = size(X, 2)
 r2_adj = 1 - ((1 - r2) * (n - 1) / (n - p - 1))
 
 # MSE, RMSE, MAE, MAPE
@@ -435,9 +435,9 @@ L'erreur quadratique moyenne (MSE) de 204.32 et sa racine (RMSE) de 14.29 nous d
 
 L'erreur absolue moyenne (MAE) de 11.12 indique qu'en moyenne, nos prédictions s'écartent de 11.12 unités des valeurs observées. Cette métrique est plus facile à interpréter que la RMSE car elle n'amplifie pas les grandes erreurs : en moyenne, notre modèle se trompe d'environ 11 unités dans ses prédictions de concentration d'ozone.
 
-L'erreur relative moyenne (MAPE) de 12.95% confirme que nos prédictions ont en moyenne un écart relatif d'environ 13% par rapport aux valeurs réelles. Cette métrique est particulièrement utile car elle est indépendante de l'échelle de mesure et permet de juger de la précision relative de notre modèle.
+L'erreur relative moyenne (MAPE) de 12.95% confirme que nos prédictions ont en moyenne un écart relatif d'environ 13% par rapport aux valeurs réelles. Cette métrique est utile car elle est indépendante de l'échelle de mesure et permet de juger de la précision relative de notre modèle.
 
-Dans l'ensemble, ces métriques démontrent que notre modèle de régression linéaire multiple présente des performances satisfaisantes pour la prédiction du taux d'ozone. Le R^2$ élevé confirme une bonne capacité explicative, tandis que les erreurs de prédiction restent dans des limites acceptables compte tenu de la complexité des phénomènes météorologiques.
+Dans l'ensemble, ces métriques démontrent que notre modèle de régression linéaire multiple présente des performances satisfaisantes pour la prédiction du taux d'ozone. Le $R^2$ élevé confirme une bonne capacité explicative, tandis que les erreurs de prédiction restent dans des limites acceptables compte tenu de la complexité des phénomènes météorologiques.
 
 ## Diagnostic graphique
 
@@ -548,11 +548,11 @@ Ce graphique compare les quantiles de nos résidus observés (axe vertical) avec
 
 Sur notre graphique, nous observons un bon alignement de la grande majorité des points le long de la ligne théorique, particulièrement dans la partie centrale de la distribution. Cet alignement confirme visuellement que nos résidus suivent bien une distribution approximativement normale, validant ainsi l'hypothèse de normalité des erreurs qui est fondamentale pour notre modèle de régression linéaire.
 
-Nous remarquons néanmoins quelques légers écarts aux deux extrémités de la distribution (queues gauche et droite) : 3 à 4 points s'écartent de la ligne théorique de chaque côté. Ces écarts correspondent aux valeurs extrêmes de nos résidus (les observations pour lesquelles l'erreur de prédiction est la plus importante). Ces déviations aux extrémités sont toutefois tout à fait normales et attendues lorsqu'on travaille avec un échantillon de taille limitée comme le nôtre (96 observations). Elles ne remettent pas en cause la validité globale de l'hypothèse de normalité. 
+Nous remarquons néanmoins quelques légers écarts aux deux extrémités de la distribution (queues gauche et droite) : 3 à 4 points s'écartent de la ligne théorique de chaque côté. Ces écarts correspondent aux valeurs extrêmes de nos résidus (les observations pour lesquelles l'erreur de prédiction est la plus importante). Ces déviations aux extrémités sont toutefois attendues lorsque l'on travaille avec un échantillon de taille limitée comme le nôtre (96 observations). Elles ne remettent pas en cause la validité globale de l'hypothèse de normalité. 
 
 Ce Q-Q plot vient donc conforter les conclusions tirées de l'histogramme précédent et confirme que notre modèle respecte bien les hypothèses statistiques nécessaires.
 
-## Synthèse
+## Synthèse des hypothèses du modèle
 
 L'ensemble de ces quatre visualisations nous permet de valider les hypothèses fondamentales du modèle de régression linéaire, confirmant ainsi la pertinence de notre approche méthodologique.
 
@@ -566,9 +566,9 @@ En conclusion, ces diagnostics convergent vers la validation complète du modèl
 
 # Validation croisée (k-fold cross-validation)
 
-Pour évaluer la robustesse et la généralisabilité de notre modèle de régression, nous utilisons une technique de validation croisée k-fold. Cette approche divise les données en k sous-ensembles (folds) et entraîne le modèle k fois, chaque fois en utilisant un fold comme ensemble de test et les k-1 autres comme ensemble d'entraînement. Cette méthode fournit une estimation plus fiable de la performance du modèle sur des données non vues.
+Pour évaluer la robustesse et la généralisabilité de notre modèle de régression, nous utilisons une technique de validation croisée k-fold. Cette approche divise les données en k sous-ensembles (classes) et entraîne le modèle k fois, chaque fois en utilisant une classe comme ensemble de test et les k-1 autres comme ensemble d'entraînement. Cette méthode fournit une estimation plus fiable de la performance du modèle sur des données non vues.
 
-Nous avons choisi $k =$ 5 folds car :
+Nous avons choisi $k =$ 5 classes car :
 
 - Avec nos 96 observations, cela crée des ensembles de test d'environ 19 observations chacun, offrant un bon équilibre entre taille et variance.
 - $k=5$ est un standard dans la communauté scientifique (bon compromis entre biais et variance).
@@ -608,7 +608,7 @@ for i in 1:k
     r2 = 1 - (ss_res / ss_tot)
     
     push!(cv_r2, r2)
-    println("Fold $i : R² = $(round(r2, digits = 2))")
+    println("Classe $i : R² = $(round(r2, digits = 2))")
 end
 
 println("-" ^ 40)
@@ -618,44 +618,46 @@ println("R² moyen : $(round(mean(cv_r2), digits = 2)) ± $(round(std(cv_r2), di
 
 Les résultats de la validation croisée révèlent un $R^2$ moyen de 0.67 ± 0.15, inférieur au $R^2$ de 0.75 obtenu sur l'ensemble complet des données. Cette baisse de performance est attendue car le modèle est entraîné sur moins de données (environ 80% à chaque itération) et testé sur des observations totalement indépendantes.
 
-Nous observons une variabilité importante entre les folds : le $R^2$ varie de 0.41 (Fold 1) à 0.77 (Fold 4). Cette dispersion, reflétée par l'écart-type de 0.15, indique que les performances du modèle dépendent de la composition de l'échantillon d'entraînement. Le Fold 1 se démarque particulièrement avec un $R^2$ faible de 0.41, suggérant que ce sous-ensemble contient des observations plus difficiles à prédire. En revanche, 4 des 5 folds affichent des $R^2$ compris entre 0.69 et 0.77, témoignant d'une certaine robustesse.
+Nous observons une variabilité importante entre les classes : le $R^2$ varie de 0.41 (Classe 1) à 0.77 (Classe 4). Cette dispersion, reflétée par l'écart-type de 0.15, indique que les performances du modèle dépendent de la composition de l'échantillon d'entraînement. La classe 1 se démarque particulièrement avec un $R^2$ faible de 0.41, suggérant que ce sous-ensemble contient des observations plus difficiles à prédire. En revanche, 4 des 5 classes affichent des $R^2$ compris entre 0.69 et 0.77, témoignant d'une certaine robustesse.
 
 Cette variabilité, bien que notable, reste acceptable compte tenu de la taille modeste de notre jeu de données (96 observations). L'écart entre le $R^2$ complet et le $R^2$ moyen confirme que notre modèle n'est pas en surapprentissage et possède une capacité de généralisation satisfaisante, malgré une sensibilité à la composition des échantillons.
 
-Afin de mieux visualiser cette variabilité des performances entre les folds, nous représentons graphiquement les $R^2$ obtenus.
+Afin de mieux visualiser cette variabilité des performances entre les classes, nous représentons graphiquement les $R^2$ obtenus.
 
 ```{julia}
 
 # Graphique des R^2 par fold
 p = bar(1:k, cv_r2, 
-    xlabel="Fold", ylabel="R²", 
-    title="Validation Croisée - R² par Fold",
+    xlabel="Classes", ylabel="R²", 
+    title="Validation Croisée - R² par classe",
     label="R² de chaque fold", color="#6495ED", size=(700, 400), legend=:topleft)
-hline!(p, [mean(cv_r2)], label="Moyenne ($(round(mean(cv_r2), digits=3)))", color=:red, linewidth=2.5, linestyle=:dash)
+hline!(p, [mean(cv_r2)], label="Moyenne ($(round(mean(cv_r2), digits=2)))", color=:red, linewidth=2.5, linestyle=:dash)
 
 display(p)
 
 ```
 
-Le graphique illustre la variabilité observée dans les résultats numériques précédents. Nous constatons que le Fold 1, avec un $R^2$ de 0.41, se situe nettement en dessous de la ligne rouge moyenne (0.67), confirmant qu'il s'agit d'un cas particulier où le modèle a eu plus de difficultés à généraliser. Cette barre sensiblement plus basse que les autres visualise l'écart-type important de 0.15 que nous avions calculé.
+Le graphique illustre la variabilité observée dans les résultats numériques précédents. Nous constatons que la classe 1, avec un $R^2$ de 0.41, se situe nettement en dessous de la ligne rouge moyenne (0.67), confirmant qu'il s'agit d'un cas particulier où le modèle a eu plus de difficultés à généraliser. Cette barre sensiblement plus basse que les autres visualise l'écart-type important de 0.15 que nous avions calculé.
 
-En revanche, les 4 autres folds présentent des hauteurs relativement homogènes, toutes situées entre 0.69 et 0.77, proches de la ligne rouge de référence. Cette concentration de 4 barres sur 5 autour de la moyenne confirme visuellement ce que nous avions observé : malgré la performance faible du Fold 1, le modèle maintient une certaine robustesse sur la majorité des partitions.
+En revanche, les 4 autres classes présentent des hauteurs relativement homogènes, toutes situées entre 0.69 et 0.77, proches de la ligne rouge de référence. Cette concentration de 4 barres sur 5 autour de la moyenne confirme visuellement ce que nous avions observé : malgré la performance faible de ma classe 1, le modèle maintient une certaine robustesse sur la majorité des partitions.
 
-Cette visualisation met en évidence la sensibilité du modèle à la composition de l'échantillon d'entraînement, tout en confirmant que cette variabilité, bien que notable, n'empêche pas le modèle d'afficher des performances acceptables dans la plupart des cas. L'écart visible entre le Fold 1 et les autres folds rappelle l'importance de la validation croisée pour détecter de telles disparités qui ne seraient pas apparentes avec une simple évaluation sur l'ensemble complet des données.
+Cette visualisation met en évidence la sensibilité du modèle à la composition de l'échantillon d'entraînement, tout en confirmant que cette variabilité, bien que notable, n'empêche pas le modèle d'afficher des performances acceptables dans la plupart des cas. L'écart visible entre la classe 1 et les autres classes rappelle l'importance de la validation croisée pour détecter de telles disparités qui ne seraient pas apparentes avec une simple évaluation sur l'ensemble complet des données.
 
-Afin de vérifier si cette variabilité observée avec $k=5$ était spécifique à ce découpage particulier, nous avons également testé la validation croisée avec $k=4$ et $k=6$ folds. Avec $k=4$, nous avons constaté que le premier fold présentait un $R^2$ bien inférieur à la moyenne, reproduisant le problème observé avec $k=5$. Avec $k=6$, la situation s'est même légèrement dégradée puisque deux folds (le fold 1 et le fold 5) affichaient des performances en dessous de la moyenne. Ces tests confirment que la variabilité observée n'est pas un artefact du choix de $k=5$, mais reflète plutôt une hétérogénéité réelle dans notre jeu de données.
+Afin de vérifier si cette variabilité observée avec $k=5$ était spécifique à ce découpage particulier, nous avons également testé la validation croisée avec $k=4$ et $k=6$ classes. Avec $k=4$, nous avons constaté que la première classe présentait un $R^2$ bien inférieur à la moyenne, reproduisant le problème observé avec $k=5$. Avec $k=6$, la situation s'est même légèrement dégradée puisque deux classes (la classe 1 et la classe 5) affichaient des performances en dessous de la moyenne. Ces tests confirment que la variabilité observée n'est pas un artefact du choix de $k=5$, mais reflète plutôt une hétérogénéité réelle dans notre jeu de données.
 
 # Conclusion 
 
 ***
 
-L'application d'un modèle de régression linéaire multiple à nos données météorologiques a permis d'obtenir des résultats globalement satisfaisants pour la prédiction du taux d'ozone. Avec un coefficient de détermination $R^2$ de 0.75 sur l'ensemble des données, notre modèle explique environ 75% de la variabilité observée dans les concentrations d'ozone, ce qui constitue une performance encourageante compte tenu de la complexité des phénomènes atmosphériques.
+Ce travail de prédiction du taux d'ozone s'est construit sur un jeu de données présentant initialement plus de 37% de valeurs manquantes pour certaines variables. Le traitement de ces données manquantes par une approche mixte (suppression des observations où la variable cible était absente et imputation par interpolation linéaire pour les variables explicatives) a permis de conserver un maximum d'informations tout en maintenant la cohérence temporelle de nos mesures météorologiques. Cette étape préalable s'est avérée importante car elle nous a permis de disposer de 96 observations complètes pour la modélisation, tout en préservant les caractéristiques statistiques des séries temporelles.
+
+Par la suite, l'application d'un modèle de régression linéaire multiple à nos données météorologiques a permis d'obtenir des résultats globalement satisfaisants pour la prédiction du taux d'ozone. Avec un coefficient de détermination $R^2$ de 0.75 sur l'ensemble des données, notre modèle explique environ 75% de la variabilité observée dans les concentrations d'ozone, ce qui constitue une performance encourageante compte tenu de la complexité des phénomènes atmosphériques.
 
 L'analyse de significativité des coefficients a révélé que deux variables se distinguent par leur impact statistiquement significatif : le taux d'ozone de la veille (`maxO3v`, coefficient de 0.35) et la nébulosité matinale à 9h (`Ne9`, coefficient de -2.14). Ces résultats sont cohérents avec la formation de l'ozone : la persistance des conditions atmosphériques explique l'importance du taux d'ozone précédent, tandis que l'effet négatif de la couverture nuageuse s'explique par le rôle du rayonnement solaire dans la formation d'ozone. Les métriques d'erreur confirment cette qualité prédictive avec une RMSE de 14.29 et une erreur relative moyenne d'environ 13%.
 
 Les diagnostics graphiques ont validé les hypothèses fondamentales du modèle linéaire : linéarité de la relation, homoscédasticité des erreurs, et normalité des résidus. Ces vérifications confirment la robustesse statistique de nos estimations et la fiabilité des tests d'inférence réalisés.
 
-La validation croisée ($k=5$) a cependant révélé certaines limites. Avec un $R^2$ moyen de 0.67 et une variabilité importante entre les folds (de 0.41 à 0.77), le modèle montre une sensibilité à la composition de l'échantillon d'entraînement. Cette variabilité, liée à la taille modeste de notre jeu de données (96 observations après traitement des valeurs manquantes), suggère que les prédictions doivent être interprétées avec prudence, particulièrement pour des conditions météorologiques extrêmes ou inhabituelles.
+La validation croisée ($k=5$) a cependant révélé certaines limites. Avec un $R^2$ moyen de 0.67 et une variabilité importante entre les classes (de 0.41 à 0.77), le modèle montre une sensibilité à la composition de l'échantillon d'entraînement. Cette variabilité, certainement liée à la taille modeste de notre jeu de données (96 observations après traitement des valeurs manquantes), suggère que les prédictions doivent être interprétées avec prudence, particulièrement pour des conditions météorologiques extrêmes ou inhabituelles.
 
 En conclusion, notre modèle de régression linéaire multiple constitue un outil utile pour la prédiction du taux d'ozone à partir de variables météorologiques, avec des performances acceptables mais perfectibles. Les limites observées lors de la validation croisée ouvrent des perspectives d'amélioration : l'augmentation de la taille de l'échantillon, l'exploration de modèles non-linéaires, ou la sélection de variables pourraient permettre d'améliorer la robustesse et la capacité de généralisation des prédictions.
 
