@@ -60,6 +60,36 @@ Analyse et modélisation de l'évolution du poids de brebis à partir de mesures
    - Agrégation quotidienne des mesures fiables (médiane pondérée)
    - Ajustement d'une courbe logistique : $f(t) = \frac{L}{1 + e^{-k(t-t_0)}} + b$
    - Modélisation de la croissance des brebis sur 3 mois
+  
+### 3. Prédiction de l'ozone
+
+Analyse et prédiction du taux d'ozone à partir de données météorologiques. L'objectif est de développer un modèle de régression linéaire multiple permettant de prédire les concentrations d'ozone en fonction de variables météorologiques (température, nébulosité, vitesse du vent).
+
+**Objectifs** :
+- Traiter les valeurs manquantes (jusqu'à 37,5% pour certaines variables)
+- Identifier les variables météorologiques significatives pour la prédiction
+- Construire un modèle de régression linéaire multiple
+- Évaluer la performance et la robustesse du modèle
+
+**Données** :
+- **Source** : Mesures météorologiques
+- **Période** : 1er juin 2001 - 30 septembre 2001 (~4 mois)
+- **Variables mesurées** : taux d'ozone, température (T9, T12, T15), nébulosité (Ne9, Ne12, Ne15), vitesse du vent (Vx9, Vx12, Vx15), direction du vent
+
+**Méthodologie** :
+1. **Traitement des valeurs manquantes** :
+   - Suppression des lignes où la variable cible (maxO3) est manquante (14,29%)
+   - Imputation par interpolation linéaire pour les variables explicatives
+2. **Modélisation par régression linéaire multiple** :
+   - 10 variables explicatives utilisées
+   - R² = 0,75 (75% de variance expliquée)
+   - Variables significatives : maxO3v (ozone de la veille) et Ne9 (nébulosité matinale)
+3. **Validation du modèle** :
+   - Diagnostics graphiques (résidus, Q-Q plot, homoscédasticité)
+   - Validation croisée k-fold (k=5) : R² moyen = 0,67 ± 0,15
+4. **Métriques de performance** :
+   - RMSE = 14,29 (erreur ~15,7% de la moyenne)
+   - MAPE = 12,95%
 
 ## Technologies utilisées
 
@@ -73,6 +103,8 @@ Analyse et modélisation de l'évolution du poids de brebis à partir de mesures
   - `RollingFunctions` : Lissage par moyennes mobiles (TP1)
   - `Distributions` : Distributions de probabilité (TP2)
   - `LsqFit` : Régression non linéaire (TP2)
+  - `GLM` : Modèles linéaires généralisés (TP3)
+  - `Interpolations` : Interpolation de données (TP3)
 - **Environnement** : Quarto pour la génération de rapports HTML
 
 ## Structure du projet
@@ -90,9 +122,16 @@ Analyse et modélisation de l'évolution du poids de brebis à partir de mesures
 │   ├── data_arles2021.csv              # Données brutes des balances
 │   ├── AIGOIN-LABOURAIL-TP2.qmd        # Rapport Quarto
 │   ├── AIGOIN-LABOURAIL-TP2.html       # Rapport HTML
+│   ├── SSD.png                         # Logo SSD
+│   └── Univ_Mtp.png                    # Logo Université de Montpellier
+│
+├── TP3 - Prédiction de l'ozone/
+│   ├── ozoneNA.csv                      # Données météorologiques
+│   ├── AIGOIN-LABOURAIL-TP3.qmd        # Rapport Quarto
+│   ├── AIGOIN-LABOURAIL-TP3.html       # Rapport HTML
 │   ├── SSD.png                          # Logo SSD
 │   └── Univ_Mtp.png                     # Logo Université de Montpellier
-│
+|
 └── README.md                            # Ce fichier
 ```
 
