@@ -303,8 +303,188 @@ Cette visualisation confirme donc que notre approche méthodologique produit des
 
 # Modélisation 
 
-***
 
+
+## Régression Linéaire
+
+Pour débuter la modélisation, nous avons opté pour une approche classique de régression linéaire multiple. Cette méthode permet de modéliser la relation linéaire entre la variable cible `maxO3` et nos variables explicatives.
+
+Premièrement, nous commençons par charger les packages nécessaires pour l'ajustement du modèle et l'évaluation de ses performances.
+
+```{julia}
+
+# Importer les packages pour la modélisation
+using GLM
+using StatsBase
+using Distributions
+
+```
+
+Ensuite, nous préparons les données en sélectionnant les variables explicatives et la variable cible pour le modèle.
+
+```{julia}
+
+# Préparation des données pour la régression
+
+# Sélectionner les variables explicatives (toutes sauf la date, la direction du vent et la variable cible)
+X_cols = [:maxO3v, :T9, :T12, :T15, :Ne9, :Ne12, :Ne15, :Vx9, :Vx12, :Vx15]
+y = data_clean.maxO3
+
+# Créer la matrice X avec les variables explicatives
+X = Matrix(data_clean[!, X_cols])
+
+println("Dimensions des données :")
+println("Nombre d'observations : ", size(X, 1))
+println("Nombre de variables : ", size(X, 2))
+println("Variable cible - min: ", minimum(y), ", max: ", maximum(y), ", moyenne: ", round(mean(y), digits=2))
+
+```
+
+Nous procédons ensuite à l'ajustement du modèle de régression linéaire en utilisant la formule permettant d'inclure toutes les variables explicatives.
+
+```{julia}
+
+# Ajustement du modèle de régression linéaire
+
+# Créer un dataframe pour GLM
+df_model = DataFrame(X, Symbol.(X_cols))
+df_model.maxO3 = y
+
+# Construire le modèle
+model = lm(@formula(maxO3 ~ maxO3v + T9 + T12 + T15 + Ne9 + Ne12 + Ne15 + Vx9 + Vx12 + Vx15), df_model)
+
+# Afficher les résultats du modèle
+println(model)
+
+```
+
+Après l'ajustement du modèle, nous calculons diverses métriques de performance pour évaluer la qualité de nos prédictions.
+
+```{julia}
+
+
+
+# Prédictions
+y_pred = predict(model)
+
+# Résidus
+residus = y .- y_pred
+
+# Coefficient de détermination (R²)
+ss_res = sum(residus .^ 2)
+ss_tot = sum((y .- mean(y)) .^ 2)
+r2 = 1 - (ss_res / ss_tot)
+
+# R² ajusté
+n = length(y)
+p = size(X, 2)
+r2_adj = 1 - ((1 - r2) * (n - 1) / (n - p - 1))
+
+# Erreur quadratique moyenne (MSE)
+mse = mean(residus .^ 2)
+
+# Racine de l'erreur quadratique moyenne (RMSE)
+rmse = sqrt(mse)
+
+# Erreur absolue moyenne (MAE)
+mae = mean(abs.(residus))
+
+# Erreur relative moyenne (MAPE)
+mape = mean(abs.(residus ./ y)) * 100
+
+println("\n=== MÉTRIQUES DE PERFORMANCE ===\n")
+println("Coefficient de détermination (R²) : ", round(r2, digits=4))
+println("R² ajusté : ", round(r2_adj, digits=4))
+println("Erreur Quadratique Moyenne (MSE) : ", round(mse, digits=2))
+println("Racine de l'EQM (RMSE) : ", round(rmse, digits=2))
+println("Erreur Absolue Moyenne (MAE) : ", round(mae, digits=2))
+println("Erreur Relative Moyenne (MAPE) : ", round(mape, digits=2), " %")
+
+```
+
+Nous créons maintenant plusieurs visualisations pour analyser la qualité de l'ajustement et les résidus du modèle.
+
+```{julia}
+
+# Visualisation 1 : Valeurs observées vs prédites
+
+p1 = scatter(y, y_pred, 
+             xlabel="Valeurs observées",
+             ylabel="Valeurs prédites",
+             title="Régression Linéaire : Observé vs Préduit",
+             label="",
+             color="#6495ED",
+             markersize=5,
+             size=(700, 500))
+
+# Ajouter la ligne y=x de référence
+lim = maximum([y; y_pred])
+plot!(p1, [0, lim], [0, lim], color=:red, label="Ligne ", linewidth=2)
+
+display(p1)
+
+```
+
+```{julia}
+
+# Visualisation 2 : Résidus en fonction des valeurs prédites
+
+p2 = scatter(y_pred, residus,
+             xlabel="Valeurs prédites",
+             ylabel="Résidus",
+             title="Graphique des Résidus",
+             label="",
+             color="#6495ED",
+             markersize=5,
+             size=(700, 500))
+
+# Ajouter une ligne à 0
+hline!(p2, [0], color=:red, label="Zéro", linewidth=2)
+
+display(p2)
+
+```
+
+```{julia}
+
+# Visualisation 3 : Distribution des résidus
+
+p3 = histogram(residus,
+               xlabel="Résidus",
+               ylabel="Fréquence",
+               title="Distribution des Résidus",
+               bins=15,
+               color="#6495ED",
+               label="",
+               size=(700, 500))
+
+display(p3)
+
+```
+
+```{julia}
+
+# Visualisation 4 : Q-Q plot pour vérifier la normalité
+
+n = length(residus)
+sorted_residus = sort(residus)
+theoretical_quantiles = quantile.(Normal(0, std(residus)), (1:n) / (n + 1))
+
+p4 = scatter(theoretical_quantiles, sorted_residus,
+             xlabel="Quantiles théoriques",
+             ylabel="Quantiles empiriques",
+             title="Q-Q Plot des Résidus",
+             label="",
+             color="#6495ED",
+             markersize=5,
+             size=(700, 500))
+
+# Ajouter la ligne de référence
+plot!(p4, [-3, 3], [-3, 3], color=:red, label="Ligne théorique", linewidth=2)
+
+display(p4)
+
+```
 
 
 
