@@ -438,10 +438,17 @@ println("Coefficient de détermination (R²) : ", round(r2, digits=4))
 println("R² ajusté : ", round(r2_adj, digits=4))
 println("Erreur Quadratique Moyenne (MSE) : ", round(mse, digits=2))
 println("Racine de l'EQM (RMSE) : ", round(rmse, digits=2))
-println("Erreur Absolue Moyenne (MAE) : ", round(mae, digits=2))
-println("Erreur Relative Moyenne (MAPE) : ", round(mape, digits=2), " %")
-
 ```
+
+### Interprétation des métriques de performance
+
+Le **coefficient de détermination R² = 0.7534** révèle que 75.34% de la variance totale de la variable réponse est expliquée par le modèle linéaire. Cette proportion de variance expliquée témoigne d'un ajustement satisfaisant, avec une part résiduelle de 24.66% attribuable à des facteurs non mesurés . Le **R² ajusté = 0.7244** intègre une pénalisation pour le nombre de paramètres estimés (k=10), confirmant que l'ajustement n'est pas le résultat d'un surparamétrage du modèle.
+
+ La **RMSE = 14.29** représente l'écart-type des résidus et fournit une mesure de dispersion des erreurs dans l'unité de la variable dépendante. 
+
+Ces indicateurs convergent vers une validation statistique du modèle 
+
+
 
 Nous créons maintenant plusieurs visualisations pour analyser la qualité de l'ajustement et les résidus du modèle.
 
@@ -460,11 +467,13 @@ p1 = scatter(y, y_pred,
 
 # Ajouter la ligne y=x de référence
 lim = maximum([y; y_pred])
-plot!(p1, [0, lim], [0, lim], color=:red, label="Ligne parfaite", linewidth=2)
+plot!(p1, [0, lim], [0, lim], color=:red, label="Ligne ", linewidth=2)
 
 display(p1)
 
 ```
+
+**Interprétation** : Le nuage de points se concentre autour de la ligne rouge de référence (y=x), indiquant une bonne concordance entre valeurs observées et prédictions. L'absence de structure systématique (courbure ou tendance) suggère que le modèle linéaire capture correctement la relation fonctionnelle.
 
 ```{julia}
 
@@ -486,6 +495,8 @@ display(p2)
 
 ```
 
+**Interprétation** : Les résidus se répartissent aléatoirement autour de zéro sans patron discernable, validant l'hypothèse d'homoscédasticité (variance constante des erreurs). L'absence de tendance ou de forme en entonnoir confirme que le modèle linéaire est approprié. 
+
 ```{julia}
 
 # Visualisation 3 : Distribution des résidus
@@ -502,6 +513,8 @@ p3 = histogram(residus,
 display(p3)
 
 ```
+
+**Interprétation** : L'histogramme révèle une distribution des résidus approximativement symétrique et centrée sur zéro, cohérente avec l'hypothèse de normalité des erreurs sous le modèle gaussien. La forme en cloche suggère que les écarts entre prédictions et observations suivent une loi normale, condition requise pour la validité des intervalles de confiance et tests statistiques. 
 
 ```{julia}
 
@@ -527,9 +540,15 @@ display(p4)
 
 ```
 
-# Validation Croisée (k-fold Cross-Validation)
+**Interprétation** : Le Q-Q plot confronte les quantiles empiriques des résidus aux quantiles théoriques d'une loi normale. L'alignement des points le long de la diagonale rouge confirme formellement l'hypothèse de normalité des erreurs (ε ~ N(0,σ²)). Les légers écarts aux extrémités (queues de distribution) sont attendus avec des échantillons finis et ne remettent pas en cause  le modèle gaussien. 
 
-***
+
+## Synthèse des diagnostics graphiques
+
+Les quatre visualisations convergent vers la validation des hypothèses du modèle linéaire gaussien : linéarité de la relation (graphique 1), homoscédasticité des erreurs (graphique 2), normalité des résidus (graphiques 3 et 4). L'absence de violations majeures légitime l'utilisation des tests de Student et intervalles de confiance calculés précédemment, confirmant la robustesse statistique de nos conclusions.
+
+
+# Validation Croisée (k-fold Cross-Validation)
 
 Pour évaluer la robustesse et la généralisabilité de notre modèle de régression, nous utilisons une technique de **validation croisée k-fold**. Cette approche divise les données en k sous-ensembles (folds) et entraîne le modèle k fois, chaque fois en utilisant un fold comme ensemble de test et les k-1 autres comme ensemble d'entraînement. Cette méthode fournit une estimation plus fiable de la performance du modèle sur des données non vues.
 
