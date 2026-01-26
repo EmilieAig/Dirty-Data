@@ -309,6 +309,10 @@ Cette visualisation confirme donc que notre approche méthodologique produit des
 
 Pour débuter la modélisation, nous avons opté pour une approche classique de régression linéaire multiple. Cette méthode permet de modéliser la relation linéaire entre la variable cible `maxO3` et nos variables explicatives.
 
+### Justification du choix
+
+La régression linéaire multiple a été choisie car elle offre un bon équilibre entre performance et simplicité. Avec 96 observations pour 10 variables explicatives, elle permet d'estimer les coefficients de manière stable sans surapprentissage. De plus, ce modèle fournit des estimations non biaisées et optimales sous les hypothèses classiques (théorème de Gauss-Markov), tout en permettant d'interpréter facilement l'effet de chaque variable météorologique sur l'ozone.
+
 Premièrement, nous commençons par charger les packages nécessaires pour l'ajustement du modèle et l'évaluation de ses performances.
 
 ```{julia}
@@ -353,10 +357,47 @@ df_model.maxO3 = y
 # Construire le modèle
 model = lm(@formula(maxO3 ~ maxO3v + T9 + T12 + T15 + Ne9 + Ne12 + Ne15 + Vx9 + Vx12 + Vx15), df_model)
 
-# Afficher les résultats du modèle
-println(model)
+# Afficher les résultats du modèle de façon lisible
+println("\n" * "="^60)
+println("RÉSUMÉ DU MODÈLE DE RÉGRESSION LINÉAIRE")
+println("="^60)
+
+# Extraire les coefficients
+coef_table = coeftable(model)
+var_names = ["Intercept", "maxO3v", "T9", "T12", "T15", "Ne9", "Ne12", "Ne15", "Vx9", "Vx12", "Vx15"]
+
+println("\nCOEFFICIENTS ET SIGNIFICATIVITÉ :")
+println("-"^60)
+println(rpad("Variable", 12), rpad("Coefficient", 15), rpad("P-value", 12), "Significatif")
+println("-"^60)
+
+for i in 1:length(var_names)
+    coef_val = round(coef_table.cols[1][i], digits=4)
+    p_val = coef_table.cols[4][i]
+    p_val_str = p_val < 0.0001 ? "<0.0001" : rpad(round(p_val, digits=4), 8)
+    signif = p_val < 0.05 ? "***" : (p_val < 0.1 ? "*" : "")
+    
+    println(rpad(var_names[i], 12), rpad(coef_val, 15), rpad(p_val_str, 12), signif)
+end
+
+println("-"^60)
+println("*** : significatif au seuil de 5%")
+println("*   : significatif au seuil de 10%")
+println("="^60)
 
 ```
+
+### Interprétation des résultats
+
+L'analyse de significativité révèle que parmi les 10 variables explicatives, **seulement 2 ont un effet statistiquement significatif** au seuil de 5% sur la concentration d'ozone :
+
+- **maxO3v** (taux d'ozone de la veille) : avec un coefficient de 0.35 et une p-value < 0.0001, c'est le prédicteur le plus fort. Une augmentation de 1 unité du taux d'ozone de la veille entraîne une augmentation de 0.35 unité du taux d'ozone actuel.
+
+- **Ne9** (nébulosité à 9h) : avec un coefficient de -2.14 et une p-value de 0.025, cette variable a un effet négatif significatif. Plus la nébulosité matinale est élevée, plus le taux d'ozone diminue, ce qui est cohérent avec le rôle du rayonnement solaire dans la formation d'ozone.
+
+La variable **T12** (température à 12h) est marginalement significative (p = 0.056) avec un effet positif, suggérant que la température de midi influence légèrement la concentration d'ozone. Les autres variables (T9, T15, Ne12, Ne15, Vx9, Vx12, Vx15) ne montrent pas d'effet significatif au seuil conventionnel de 5%.
+
+
 
 Après l'ajustement du modèle, nous calculons diverses métriques de performance pour évaluer la qualité de nos prédictions.
 
@@ -419,7 +460,7 @@ p1 = scatter(y, y_pred,
 
 # Ajouter la ligne y=x de référence
 lim = maximum([y; y_pred])
-plot!(p1, [0, lim], [0, lim], color=:red, label="Ligne ", linewidth=2)
+plot!(p1, [0, lim], [0, lim], color=:red, label="Ligne parfaite", linewidth=2)
 
 display(p1)
 
@@ -485,6 +526,87 @@ plot!(p4, [-3, 3], [-3, 3], color=:red, label="Ligne théorique", linewidth=2)
 display(p4)
 
 ```
+
+# Validation Croisée (k-fold Cross-Validation)
+
+***
+
+Pour évaluer la robustesse et la généralisabilité de notre modèle de régression, nous utilisons une technique de **validation croisée k-fold**. Cette approche divise les données en k sous-ensembles (folds) et entraîne le modèle k fois, chaque fois en utilisant un fold comme ensemble de test et les k-1 autres comme ensemble d'entraînement. Cette méthode fournit une estimation plus fiable de la performance du modèle sur des données non vues.
+
+Nous avons choisi **k=5 folds** car :
+- Avec nos 96 observations, cela crée des ensembles de test de ~19 observations chacun, offrant un bon équilibre entre taille et variance
+- k=5 est un standard dans la communauté scientifique (bon compromis entre biais et variance)
+- k=5 réduit les fluctuations dues au hasard tout en restant computationnellement efficace
+- Cela permet une estimation robuste sans surcharger les calculs
+
+```{julia}
+
+# Validation croisée k-fold (k=5)
+k = 5
+n = size(X, 1)
+Random.seed!(42)
+
+indices = shuffle(1:n)
+fold_size = div(n, k)
+
+cv_r2 = Float64[]
+
+println("Validation Croisée (k=$k)")
+println("=" ^ 40)
+
+for i in 1:k
+    # Indices de test et entraînement
+    test_idx = indices[(i-1)*fold_size+1:min(i*fold_size, n)]
+    train_idx = indices[setdiff(1:n, (i-1)*fold_size+1:min(i*fold_size, n))]
+    
+    # Diviser les données
+    X_train = [ones(length(train_idx)) Float64.(X[train_idx, :])]
+    y_train = Float64.(y[train_idx])
+    X_test = [ones(length(test_idx)) Float64.(X[test_idx, :])]
+    y_test = Float64.(y[test_idx])
+    
+    # Ajustement et prédiction
+    beta = inv(X_train' * X_train) * X_train' * y_train
+    y_pred = X_test * beta
+    
+    # Calcul du R²
+    ss_res = sum((y_test .- y_pred) .^ 2)
+    ss_tot = sum((y_test .- mean(y_test)) .^ 2)
+    r2 = 1 - (ss_res / ss_tot)
+    
+    push!(cv_r2, r2)
+    println("Fold $i : R² = $(round(r2, digits=4))")
+end
+
+println("=" ^ 40)
+println("R² moyen : $(round(mean(cv_r2), digits=4)) ± $(round(std(cv_r2), digits=4))")
+
+
+
+```
+
+```{julia}
+
+
+# Graphique des R² par fold
+p = bar(1:k, cv_r2, 
+    xlabel="Fold", ylabel="R²", 
+    title="Validation Croisée - R² par Fold",
+    label="R² de chaque fold", color="#6495ED", size=(700, 400), legend=:topleft)
+hline!(p, [mean(cv_r2)], label="Moyenne ($(round(mean(cv_r2), digits=3)))", color=:red, linewidth=2.5, linestyle=:dash)
+display(p)
+
+```
+
+## Interprétation Graphique
+
+On observe que les barres ne sont pas toutes à la même hauteur : certaines se situent légèrement au-dessus de la ligne moyenne tandis que d'autres se positionnent légèrement en dessous, ce qui témoigne d'une certaine variabilité entre les différentes partitions des données. Cependant, cette variabilité reste modérée et contrôlée, car aucune barre n'est extrêmement éloignée de la moyenne. Cette proximité relative des performances autour de la ligne rouge valide la stabilité et la généralisabilité du modèle, démontrant que les prédictions ne dépendent pas d'une configuration spécifique des données mais restent robustes indépendamment de la partition utilisée.
+
+## conclusion validation
+
+Les résultats de la validation croisée confirment la robustesse du modèle de régression linéaire. Le R² moyen obtenu sur les 5 folds démontre que le modèle maintient des performances cohérentes quelle que soit la partition des données utilisée, ce qui exclut tout problème de surapprentissage. L'écart-type relativement faible entre les R² des différents folds indique une stabilité des performances et montre que le modèle n'est pas sensible à la composition particulière de l'échantillon d'entraînement. Chaque fold ayant servi de données de test "non vues" pendant l'entraînement, le fait que le modèle performe bien sur ces 5 ensembles différents atteste de sa capacité de généralisation à de nouvelles observations. 
+
+
 
 
 
