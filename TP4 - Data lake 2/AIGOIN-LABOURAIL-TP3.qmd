@@ -1,0 +1,664 @@
+---
+title: |
+  ![](SSD.png){width=120px style="float:left; margin-right:20px;"} 
+  ![](Univ_Mtp.png){width=120px style="float:right; margin-left:20px;"}
+  
+  <div style="text-align: center; clear: both; padding-top: 1rem; color: #6495ED;">
+  TP n°3 : Prédiction de l'Ozone
+  </div>
+subtitle: |
+  <div style="text-align: center; clear: both; padding-top: 1rem;">
+  HAX004X - Dirty Data
+  </div>
+author: 
+    - name: AIGOIN Emilie
+    - name: LABOURAIL Célia
+date: today
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: right
+    title-block-banner: true
+    number-sections: true
+    code-fold: true
+    code-tools: false
+    code-copy: true
+    df-print: paged
+    embed-resources: false
+    highlight-style: github
+execute:
+  engine: jupyter
+  echo: true
+  warning: false
+  message: false
+  cache: false
+lang: fr
+---
+
+<style>
+/* Titre principal */
+.quarto-title-block .quarto-title {
+  color: #6495ED !important;
+}
+
+/* Numéros de sections */
+.header-section-number {
+  color: #6495ED !important;
+}
+
+/* Traits horizontaux */
+hr {
+  border-color: #2563eb !important;
+  border-width: 2px !important;
+}
+
+/* Texte en justifié */
+body, p {
+  text-align: justify;
+  text-justify: inter-word;
+}
+</style>
+
+# Introduction
+
+***
+
+Ce rapport présente notre travail sur des données météorologiques et plus précisément sur des concentration en ozone. Notre objectif était de produire une méthode de régression qui prédit le taux d'ozone en fonction des autres variables mesurées.
+
+Le long de ce travail, nous utiliserons le langage de programmation [Julia](https://julialang.org/), qui permet les applications de calcul numérique et la visualisation graphique. Tous nos codes sont disponibles en opensource sur notre page Github via [ce lien](https://github.com/EmilieAig/Dirty-Data).
+
+# Visualisation des données
+
+***
+
+Tout d'abord, afin de comprendre un peu mieux notre jeu de données, nous avons commencé par effectuer des visualisations. Pour cela, nous commençons par charger les bibliothèques nécessaires à la manipulation des données et à leur visualisation.
+
+```{julia}
+
+# Importer les packages
+
+using CSV
+using DataFrames
+using Dates
+using Plots
+using Statistics
+using Interpolations
+using Random
+
+```
+
+Les données sont ensuite importées dans un tableau (dataframe), ce qui va nous permettre une manipulation structurée de nos données.
+
+```{julia}
+
+# Importer les données
+
+data = CSV.read("ozoneNA.csv", DataFrame)
+first(data, 5)
+
+```
+
+Suite à l'importation de nos données sous forme d'un dataframe Julia et la visualisation des cinq premières lignes, nous observons 13 variables principales : 
+
+- La date de la mesure (`Column1`).
+- Le taux d'Ozone mesuré (`maxO3`).
+- Le taux d'Ozone mesuré la veille (`maxO3v`).
+- La direction du vent (`WindDirection`).
+- Les autres variables mesurées (`T9`, `T12`, `T15`, `Ne9`, `Ne12`, `Ne15`, `Vx9`, `Vx12`, `Vx15`).
+
+D'après ce [site de nomenclature météorologique](https://www.infoclimat.fr/apprendre-lexique-meteo.html), nous définissons les variables suivantes comme : `T` désignant la température, `Ne` la nébulosité (couverture nuageuse), et `Vx` la vitesse du vent. De plus, nous partons du principe que les chiffres 9, 12 et 15 correspondent aux horaires de mesure respectifs : 9h, 12h et 15h. Ainsi, `T12` représente la température mesurée à midi, `Ne15` la nébulosité à 15h, et `Vx9` la vitesse du vent à 9h du matin.
+
+De plus, nous remarquons que la colonne de date est de type `Int64` ce qui empêche toute manipulation temporelle. De même, les valeurs de nos variables sont toutes en format `String` même si ce sont des valeurs numériques car les colonnes contiennent des valeurs maquantes (`NA`.) Ainsi, nous convertissons la colonne des dates en format `Date` afin de permettre des opérations temporelles telles que l'agrégation ou la représentation graphique en fonction du temps et les autres colonnes en `Float64`.
+
+```{julia}
+
+# Conversion des dates
+data.Column1 = Date.(string.(data.Column1), dateformat"yyyymmdd")
+
+# Conversion des autres colonnes
+col_conversion = [:maxO3, :maxO3v, :T9, :T12, :T15, :Ne9, :Ne12, :Ne15, :Vx9, :Vx12, :Vx15]
+
+for col in col_conversion
+    data[!, col] = replace(data[!, col], "NA" => missing) # Remplacer NA par missing
+    data[!, col] = passmissing(parse).(Float64, data[!, col])
+end
+
+println("Premières lignes :")
+display(first(data, 5))
+
+println("\nDernières lignes :")
+display(last(data, 5))
+
+```
+
+Nous voyons que les conversions ont bien fonctionnées. De plus, nous pouvons voir que nous avons accès à des mesures prises du 1er juin 2001 au 30 septembre 2001 ce qui couvre une période d'environ 4 mois.
+
+En observant ces premières et dernières lignes de notre jeu de données, nous constatons la présence de nombreuses valeurs manquantes (`NA` qui ont été transformées en `missing`) réparties sur plusieurs variables. Ces valeurs manquantes constituent un problème important pour notre analyse car elles peuvent affecter la qualité de nos prédictions et biaiser nos résultats.
+
+Afin de mieux comprendre la structure de notre jeu de données, nous allons commencer par faire des visualisations graphiques qui nous permettront d'observer les distributions et les relations entre les différentes variables.
+
+Pour commencer notre exploration visuelle, nous allons créer un graphique simple qui représente l'évolution du taux d'ozone (notre variable cible) au cours du temps. Cette visualisation nous permettra d'identifier d'éventuelles tendances saisonnières ou des périodes particulières.
+
+```{julia}
+
+# Graphique de l'évolution du taux d'ozone dans le temps
+
+plot(data.Column1, data.maxO3v, 
+     label = "Taux d'ozone maximal", 
+     xlabel = "Date", 
+     ylabel = "Concentration d'ozone (maxO3)",
+     title = "Evolution du taux d'ozone de juin à septembre 2001",
+     linewidth = 2,
+     color = "#6495ED",
+     legend = :topleft,
+     size = (800, 400))
+
+```
+
+Nous observons plusieurs éléments intéressants dans l'évolution du taux d'ozone entre juin et septembre 2001. Premièrement, il existe une forte variabilité avec des fluctuations importantes : les concentrations oscillent généralement entre 55 et 125, avec quelques pics pouvant atteindre 45 ou 160. Deuxièmement, nous ne distinguons pas de tendance nette à la hausse ou à la baisse sur l'ensemble de la période. Enfin, nous constatons la présence de nombreuses discontinuités dans la courbe, visibles par les sauts brusques entre certains points. Ces ruptures correspondent aux valeurs manquantes dans notre jeu de données, qui créent des trous dans la série temporelle. Cette observation graphique confirme l'importance du problème des données manquantes déjà identifié lors de l'analyse du tableau de données.
+
+Ainsi, avant de procéder à toute modélisation, il est indispensable de quantifier la proportion des données manquantes dans notre jeu de données. Cette analyse permettra de choisir la méthode de traitement la plus appropriée pour supprimer/imputer ces valeurs tout en préservant l'intégrité de nos données.
+
+```{julia}
+
+# Calculer la proportion de valeurs manquantes par variable
+
+n_total = nrow(data)
+
+println("Proportion de valeurs manquantes par variable :\n")
+
+for col in names(data)
+    n_missing = count(ismissing, data[!, col])
+    prop_missing = round(n_missing / n_total * 100, digits=2)
+    println("$col : $n_missing ($prop_missing%)")
+end
+
+```
+
+Cette analyse révèle que les valeurs manquantes sont inégalement réparties dans notre jeu de données. Nous observons que les variables de date et de direction du vent sont complètes, sans aucune valeur manquante. En revanche, les autres variables présentent des taux de données manquantes relativement élevés, allant de 8,93% pour `Vx12` jusqu'à 37,5% pour `Ne12`. 
+
+Plus précisément, les variables `T` et `Ne` comportent environ 30% de valeurs manquantes, ce qui représente une proportion très importante. Concernant notre variable cible de taux d'Ozone, nous constatons un taux de 14,29% de données manquantes, tandis que le taux d'ozone de la veille présente un taux légèrement inférieur de 10,71%. Les variables `Vx` montrent des taux plus modérés, variant entre 9% et 19%. 
+
+Cette situation nécessite une réflexion approfondie sur la stratégie à adopter, c'est-à-dire décider si nous devons supprimer les observations incomplètes au risque de perdre une partie importante de nos données, imputer les valeurs manquantes en introduisant potentiellement un biais, ou adopter une approche combinée selon les variables.
+
+# Traitement des valeurs manquantes
+
+***
+
+Compte tenu de l'analyse précédente, nous avons dû trouver une stratégie pour traiter les valeurs manquantes. Étant donné que certaines variables présentent jusqu'à 37,5% de données manquantes, supprimer toutes les lignes incomplètes nous ferait perdre une part trop importante de notre jeu de données. Nous avons donc décidé d'adopter une approche mixte en deux étapes.
+
+Tout d'abord, la suppression sélective de certaines valeurs manquantes. Nous supprimons uniquement les lignes où la variable cible (`maxO3`) est manquante, car il est impossible d'évaluer notre modèle de prédiction sur une valeur que nous ne connaissons pas. Cela représente environ 14% des données.
+
+Deuxièmement, pour les variables explicatives restantes, nous utiliserons l'interpolation linéaire. Nous justifions ce choix par la nature temporelle de nos données météorologiques. En effet, les variables comme la température ou le vent évoluent de manière relativement continue dans le temps. L'interpolation linéaire permet donc d'estimer les valeurs manquantes en supposant une transition progressive entre deux mesures consécutives.
+
+Cette approche nous permettra de conserver un maximum de données tout en maintenant la cohérence temporelle de notre analyse.
+
+```{julia}
+
+# Traitement des valeurs manquantes
+
+# Supprimer les lignes où maxO3 est manquant
+println("Nombre de lignes avant suppression : ", nrow(data))
+data_clean = dropmissing(data, :maxO3)
+println("Nombre de lignes après suppression des maxO3 manquants : ", nrow(data_clean), "\n")
+
+# Imputation par interpolation linéaire pour les autres variables
+
+for col in names(data_clean)
+    # On ne traite pas la date et les variables déjà complètes
+    if col != "Column1" && col != "WindDirection"
+        n_missing_before = count(ismissing, data_clean[!, col])
+        
+        if n_missing_before > 0
+            # Identifier les indices des valeurs non-manquantes
+            non_missing_idx = findall(!ismissing, data_clean[!, col])
+            non_missing_values = [data_clean[i, col] for i in non_missing_idx]
+            
+            if length(non_missing_values) >= 2
+                # Créer une interpolation linéaire
+                itp = LinearInterpolation(non_missing_idx, non_missing_values, extrapolation_bc=Line())
+                
+                # Remplacer les valeurs manquantes par interpolation
+                for i in 1:nrow(data_clean)
+                    if ismissing(data_clean[i, col])
+                        data_clean[i, col] = itp(i)
+                    end
+                end
+                
+                println("$col : $n_missing_before valeurs imputées par interpolation linéaire")
+            end
+        end
+    end
+end
+
+# Vérification finale
+total_missing = sum(count(ismissing, data_clean[!, col]) for col in names(data_clean))
+println("\nNombre total de valeurs manquantes restantes : $total_missing")
+
+```
+
+Nous pouvons voir que nous avons supprimé 16 lignes correspondant aux observations où la variable cible `maxO3` était manquante. De plus, nous avons procédé à l'imputation par interpolation linéaire des 231 valeurs manquantes réparties sur les 10 variables explicatives restantes. Les variables de `Ne12` et `T9` ont nécessité le plus d'imputations avec respectivement 35 et 33 valeurs, tandis que les variables `Vx` ont nécessité moins d'interventions avec entre 9 et 18 valeurs imputées. 
+
+La vérification finale confirme qu'il ne reste aucune valeur manquante dans notre jeu de données nettoyé, qui compte désormais 96 lignes complètes. 
+
+Afin de vérifier visuellement la cohérence de notre méthode d'imputation par interpolation linéaire, nous avons créé un graphique illustrant le processus pour la variable `Ne12`, qui présente le plus grand nombre de valeurs manquantes avec 35 imputations. Ce graphique permet d'observer comment les valeurs imputées, représentées en rouge, s'insèrent naturellement entre les valeurs originales, représentées en bleu. La ligne grise relie l'ensemble des points et met en évidence la continuité temporelle de la série après imputation.
+
+```{julia}
+
+# Visualisation de l'imputation pour Ne12
+
+# Recharger les données originales pour comparaison
+data_original = CSV.read("ozoneNA.csv", DataFrame)
+data_original.Column1 = Date.(string.(data_original.Column1), "yyyymmdd")
+
+# Convertir les colonnes numériques
+for col in names(data_original)
+    if col != "Column1" && col != "WindDirection"
+        data_original[!, col] = parse.(Float64, replace.(data_original[!, col], "NA" => "NaN"))
+        data_original[!, col] = ifelse.(isnan.(data_original[!, col]), missing, data_original[!, col])
+    end
+end
+
+# Supprimer les mêmes lignes que dans data_clean
+data_original_filtered = dropmissing(data_original, :maxO3)
+
+# Tracer la ligne grise qui relie tous les points
+p = plot(data_clean.Column1, data_clean.Ne12,
+         label="",
+         xlabel="Date",
+         ylabel="Variable Ne12",
+         title="Visualisation de l'imputation - Variable Ne12",
+         linewidth=1,
+         color=:lightgray,
+         legend=:bottomright,
+         size=(700, 400))
+
+# Identifier les valeurs originales (non manquantes)
+dates_originales = data_clean.Column1[.!ismissing.(data_original_filtered.Ne12)]
+valeurs_originales = data_clean.Ne12[.!ismissing.(data_original_filtered.Ne12)]
+
+# Identifier les valeurs imputées
+dates_imputees = data_clean.Column1[ismissing.(data_original_filtered.Ne12)]
+valeurs_imputees = data_clean.Ne12[ismissing.(data_original_filtered.Ne12)]
+
+# Ajouter les points originaux en bleu
+scatter!(p, dates_originales, valeurs_originales,
+         label="Valeurs originales",
+         color="#6495ED",
+         markersize=4)
+
+# Ajouter les points imputés en rouge
+scatter!(p, dates_imputees, valeurs_imputees,
+         label="Valeurs imputées (n=35)",
+         color=:red,
+         markersize=4)
+
+display(p)
+
+```
+
+Ce graphique illustre l'efficacité de notre méthode d'imputation par interpolation linéaire. Nous observons que les 35 valeurs imputées, représentées en rouge, s'intègrent de manière cohérente avec les valeurs originales en bleu. L'interpolation respecte bien les variations temporelles de la variable. Nous constatons notamment que les valeurs imputées ne présentent pas de ruptures brutales ni de valeurs aberrantes qui détonneraient avec le reste de la série.
+
+Cette visualisation confirme donc que notre approche méthodologique produit des estimations plausibles qui préservent les caractéristiques statistiques de la variable tout en maintenant la continuité temporelle de nos données. Le jeu de données ainsi complété est donc prêt pour la phase de modélisation.
+
+# Modélisation 
+
+## Régression Linéaire
+
+Pour débuter la modélisation, nous avons opté pour une approche classique de régression linéaire multiple. Cette méthode permet de modéliser la relation linéaire entre la variable cible `maxO3` et nos variables explicatives.
+
+La régression linéaire multiple a été choisie car elle offre un bon équilibre entre performance et simplicité. Avec 96 observations pour 10 variables explicatives, elle permet d'estimer les coefficients de manière stable sans surapprentissage. De plus, ce modèle fournit des estimations non biaisées et optimales sous les hypothèses classiques (théorème de Gauss-Markov) que nous vérifierons par la suite, tout en permettant d'interpréter facilement l'effet de chaque variable météorologique sur l'ozone.
+
+Premièrement, nous commençons par charger les packages nécessaires pour l'ajustement du modèle et l'évaluation de ses performances.
+
+```{julia}
+
+# Importer les packages pour la modélisation
+using GLM
+using StatsBase
+using Distributions
+
+```
+
+Ensuite, nous préparons les données en sélectionnant les variables explicatives et la variable cible pour le modèle.
+
+```{julia}
+
+# Préparation des données pour la régression
+
+# Var explicatives (toutes sauf date, direction vent et max03)
+X_cols = [:maxO3v, :T9, :T12, :T15, :Ne9, :Ne12, :Ne15, :Vx9, :Vx12, :Vx15]
+
+y = data_clean.maxO3
+X = Matrix(data_clean[!, X_cols])
+
+println("Nombre de variables : ", size(X, 2))
+println("Variable cible : \n- min: ", minimum(y), "\n- max: ", maximum(y), "\n- moyenne: ", round(mean(y), digits=2))
+
+```
+
+Nous constatons que notre jeu de données préparé pour la modélisation contient 10 variables explicatives, ce qui correspond bien aux variables météorologiques que nous avons conservées après le traitement des valeurs manquantes (`maxO3v`, `T9`, `T12`, `T15`, `Ne9`, `Ne12`, `Ne15`, `Vx9`, `Vx12`, `Vx15`). Nous avons exclu logiquement la date et la direction du vent qui ne sont pas des variables numériques continues adaptées à notre régression linéaire.
+
+Les statistiques descriptives de notre variable cible `maxO3` révèlent une concentration d'ozone minimale de 42 et maximale de 166, avec une moyenne d'environ 91. Ces valeurs sont cohérentes avec les observations que nous avions faites lors de la visualisation graphique initiale, où nous avions noté des concentrations oscillant généralement entre 55 et 125, avec quelques pics pouvant atteindre 160. L'amplitude importante confirme la forte variabilité du taux d'ozone que nous cherchons à expliquer par notre modèle.
+
+Nous procédons ensuite à l'ajustement du modèle de régression linéaire en utilisant la formule permettant d'inclure toutes les variables explicatives.
+
+```{julia}
+
+# Ajustement du modèle de régression linéaire
+
+# Créer un dataframe pour GLM
+df_model = DataFrame(X, Symbol.(X_cols))
+df_model.maxO3 = y
+
+# Construire le modèle de régression linéaire
+model = lm(@formula(maxO3 ~ maxO3v + T9 + T12 + T15 + Ne9 + Ne12 + Ne15 + Vx9 + Vx12 + Vx15), df_model)
+
+# Extraire les coefficients
+coef_table = coeftable(model)
+var_names = ["Intercept", "maxO3v", "T9", "T12", "T15", "Ne9", "Ne12", "Ne15", "Vx9", "Vx12", "Vx15"]
+
+println("-"^60)
+println(rpad("Variable", 12), rpad("Coefficient", 15), rpad("P-value", 12), "Significatif")
+println("-"^60)
+
+for i in 1:length(var_names)
+    coef_val = round(coef_table.cols[1][i], digits=4)
+    p_val = coef_table.cols[4][i]
+    p_val_str = p_val < 0.0001 ? "<0.0001" : rpad(round(p_val, digits=4), 8)
+    signif = p_val < 0.05 ? "***" : (p_val < 0.1 ? "*" : "")
+    
+    println(rpad(var_names[i], 12), rpad(coef_val, 15), rpad(p_val_str, 12), signif)
+end
+
+println("-"^60)
+println("*** : significatif au seuil de 5%")
+println("*   : significatif au seuil de 10%")
+
+```
+
+L'analyse de significativité révèle que parmi les 10 variables explicatives, seulement 2 ont un effet statistiquement significatif au seuil de 5% sur la concentration d'ozone.
+
+La variable `maxO3v` (taux d'ozone de la veille) a un coefficient de 0.35 et une p-valeur < 0.0001. Elle est le prédicteur le plus fort de notre modèle.
+
+La variable `Ne9` (nébulosité à 9h) a un coefficient de -2.14 et une p-valeur de 0.025. Elle a bien un effet négatif significatif : plus elle est élevée et plus le taux d'ozone diminue.
+
+Enfin, la variable `T12` présente une p-valeur de 0.056, légèrement au-dessus du seuil conventionnel de 5%, mais significative au seuil de 10%. Son coefficient positif de 2.34 suggère qu'une valeur élevée de cette variable favorise la formation d'ozone.
+
+Les autres variables ne montrent pas d'effet statistiquement significatif au seuil de 5%. Leurs p-valeurs élevées (comprises entre 0.19 et 0.64) indiquent que leurs effets apparents pourraient être dus au hasard. Cela ne signifie pas nécessairement qu'elles n'ont aucun effet, mais plutôt que cet effet n'est pas détectable avec notre taille d'échantillon ou qu'il est capturé par d'autres variables du modèle (problème potentiel de colinéarité entre les variables).
+
+Ces résultats nous semblent cohérents d'un point de vue météorologique. La forte significativité de `maxO3v` s'explique par la persistance des conditions atmosphériques : les masses d'air et les paramètres météorologiques évoluant de manière progressive, un taux élevé d'ozone un jour donné reflète généralement des conditions qui tendent à se maintenir le lendemain. L'effet négatif de `Ne9` est également logique puisque la formation d'ozone nécessite un rayonnement UV intense pour activer des réactions chimiques. Enfin, une couverture nuageuse importante le matin limite ce rayonnement et réduit donc la production d'ozone au cours de la journée. Quant à `T12`, son coefficient positif reflète le double rôle de la température qui accélère les réactions chimiques produisant l'ozone, les températures élevées à midi étant souvent associées aux journées ensoleillées propices aux pics d'ozone.
+
+Après l'ajustement du modèle, nous calculons plusieurs métriques de performance pour évaluer la qualité de nos prédictions.
+
+```{julia}
+
+# Prédictions
+y_pred = predict(model)
+
+# Résidus
+residus = y .- y_pred
+
+# Coefficient de détermination (R^2)
+ss_res = sum(residus .^ 2)
+ss_tot = sum((y .- mean(y)) .^ 2)
+r2 = 1 - (ss_res / ss_tot)
+
+# R^2 ajusté
+n = length(y)
+p = size(X, 2)
+r2_adj = 1 - ((1 - r2) * (n - 1) / (n - p - 1))
+
+# MSE, RMSE, MAE, MAPE
+mse = mean(residus .^ 2)
+rmse = sqrt(mse)
+mae = mean(abs.(residus))
+mape = mean(abs.(residus ./ y)) * 100
+
+println("Coefficient de détermination (R²) : ", round(r2, digits = 2))
+println("R² ajusté : ", round(r2_adj, digits = 2))
+println("Erreur Quadratique Moyenne (MSE) : ", round(mse, digits = 2))
+println("Racine de l'EQM (RMSE) : ", round(rmse, digits = 2))
+println("Erreur Absolue Moyenne (MAE) : ", round(mae, digits = 2))
+println("Erreur Relative Moyenne (MAPE) : ", round(mape, digits = 2), " %")
+
+```
+
+Le coefficient de détermination $R^2$ de 0.75 indique que notre modèle de régression linéaire explique environ 75% de la variabilité du taux d'ozone. Ce résultat est satisfaisant pour des données météorologiques, qui sont naturellement bruitées et influencées par de nombreux facteurs non mesurés. Cela signifie que les 10 variables explicatives que nous avons sélectionnées capturent une part importante des variations du taux d'ozone.
+
+Le $R^2$ ajusté de 0.72 prend en compte le nombre de variables dans le modèle et pénalise l'ajout de variables non informatives. La légère différence avec le $R^2$ brut (environ 3% de moins) suggère que notre modèle n'est pas surparamétré et que les variables incluses contribuent réellement à l'explication de la variable cible, même si certaines ne sont pas statistiquement significatives individuellement.
+
+L'erreur quadratique moyenne (MSE) de 204.32 et sa racine (RMSE) de 14.29 nous donnent une mesure de l'écart typique entre nos prédictions et les valeurs réelles. Pour replacer cette valeur dans son contexte, rappelons que notre variable cible `maxO3` varie entre 42 et 166 avec une moyenne de 91.24. Une RMSE de 14.29 représente donc environ 15.7% de la moyenne, ce qui nous semble raisonnable.
+
+L'erreur absolue moyenne (MAE) de 11.12 indique qu'en moyenne, nos prédictions s'écartent de 11.12 unités des valeurs observées. Cette métrique est plus facile à interpréter que la RMSE car elle n'amplifie pas les grandes erreurs : en moyenne, notre modèle se trompe d'environ 11 unités dans ses prédictions de concentration d'ozone.
+
+L'erreur relative moyenne (MAPE) de 12.95% confirme que nos prédictions ont en moyenne un écart relatif d'environ 13% par rapport aux valeurs réelles. Cette métrique est utile car elle est indépendante de l'échelle de mesure et permet de juger de la précision relative de notre modèle.
+
+Dans l'ensemble, ces métriques démontrent que notre modèle de régression linéaire multiple présente des performances satisfaisantes pour la prédiction du taux d'ozone. Le $R^2$ élevé confirme une bonne capacité explicative, tandis que les erreurs de prédiction restent dans des limites acceptables compte tenu de la complexité des phénomènes météorologiques.
+
+## Diagnostic graphique
+
+Nous créons maintenant plusieurs visualisations pour vérifier visuellement la qualité de l'ajustement.
+
+```{julia}
+
+# Visualisation 1 : Valeurs observées vs prédites
+
+p1 = scatter(y, y_pred, 
+             xlabel="Valeurs observées",
+             ylabel="Valeurs prédites",
+             title="Régression Linéaire : Observé vs Prédit",
+             label="",
+             color="#6495ED",
+             markersize=5,
+             size=(700, 500))
+
+# Ajouter la ligne y=x de référence
+lim = maximum([y; y_pred])
+plot!(p1, [0, lim], [0, lim], color=:red, label="Ligne ", linewidth=2)
+
+display(p1)
+
+```
+
+Ce graphique nous permet de vérifier visuellement la qualité de notre modèle en comparant les valeurs d'ozone réellement observées (axe horizontal) avec celles prédites par notre régression (axe vertical). Dans un modèle parfait, tous les points seraient alignés sur la ligne rouge de référence ($y=x$) qui représente l'égalité parfaite entre observation et prédiction.
+
+Nous constatons que les points se regroupent globalement autour de cette ligne de référence, ce qui témoigne d'une bonne capacité prédictive de notre modèle. La dispersion autour de la ligne reste modérée et ne présente pas de structure particulière (comme une courbure ou une forme systématique), ce qui confirme que la relation linéaire que nous avons modélisée est appropriée pour décrire le lien entre nos variables explicatives et le taux d'ozone. Nous observons néanmoins quelques points qui s'écartent davantage de la ligne, notamment pour les valeurs extrêmes (très faibles ou très élevées), ce qui est cohérent avec les métriques d'erreur calculées précédemment.
+
+Nous continuons nos analyses à l'aide du graphique des résidus. C'est un outil diagnostique qui permet de vérifier la validité de notre modèle de régression. Les résidus représentent les écarts entre les valeurs observées et les valeurs prédites par notre modèle. Dans un modèle bien spécifié, ces résidus doivent se comporter de manière aléatoire, sans présenter de structure particulière.
+
+```{julia}
+
+# Visualisation 2 : Résidus en fonction des valeurs prédites
+
+p2 = scatter(y_pred, residus,
+             xlabel="Valeurs prédites",
+             ylabel="Résidus",
+             title="Graphique des Résidus",
+             label="",
+             color="#6495ED",
+             markersize=5,
+             size=(700, 500))
+
+# Ajouter une ligne à 0
+hline!(p2, [0], color=:red, label="Zéro", linewidth=2)
+
+display(p2)
+
+```
+
+Sur ce graphique, nous observons que les points se dispersent de manière relativement uniforme autour de la ligne horizontale rouge (résidus = 0), sans former de patron discernable. Cette répartition aléatoire est un bon signe qui indique que notre modèle linéaire capture correctement la relation entre les variables. De plus, la dispersion verticale des points reste relativement constante quelle que soit la valeur prédite : nous ne détectons pas de forme en entonnoir qui indiquerait une augmentation de la variance des erreurs avec le niveau d'ozone prédit. Cela valide donc bien l'hypothèse d'homoscédasticité (variance constante des erreurs).
+
+Nous remarquons toutefois quelques points qui s'écartent davantage de zéro (notamment deux résidus autour de -40 et -50). Ces quelques écarts restent néanmoins dans des limites acceptables et ne remettent pas en cause la validité globale du modèle.
+
+```{julia}
+
+# Visualisation 3 : Distribution des résidus
+
+p3 = histogram(residus,
+               xlabel="Résidus",
+               ylabel="Fréquence",
+               title="Distribution des Résidus",
+               bins=15,
+               color="#6495ED",
+               label="",
+               size=(700, 500))
+
+display(p3)
+
+```
+
+L'histogramme de la distribution des résidus nous permet de vérifier une autre hypothèse importante du modèle de régression linéaire : la normalité des erreurs. Cette visualisation complète l'analyse du graphique précédent en nous renseignant sur la forme de la distribution des écarts entre observations et prédictions.
+
+Nous observons que l'histogramme présente une forme approximativement en cloche, centrée autour de zéro. Cette distribution est caractéristique d'une loi normale, ce qui est une propriété souhaitée pour les résidus d'un modèle de régression. La majorité des résidus se concentrent dans l'intervalle [-20, +20], avec un pic marqué autour de zéro, indiquant que notre modèle commet le plus souvent de petites erreurs.
+
+La symétrie relative de la distribution autour de zéro est également rassurante : elle signifie que notre modèle ne tend pas systématiquement à surestimer ou sous-estimer les valeurs d'ozone. Cette distribution approximativement normale des résidus valide l'une des hypothèses fondamentales permettant d'utiliser les tests statistiques et intervalles de confiance calculés précédemment.
+
+Pour compléter notre analyse de la normalité des résidus suggérée par l'histogramme, nous réalisons un Q-Q plot (Quantile-Quantile plot) qui offre un test visuel plus formel de cette hypothèse. Ce graphique permet de détecter des écarts à la normalité qui pourraient ne pas être évidents sur un simple histogramme.
+
+```{julia}
+
+# Visualisation 4 : Q-Q plot pour vérifier la normalité
+
+n = length(residus)
+sorted_residus = sort(residus)
+theoretical_quantiles = quantile.(Normal(0, std(residus)), (1:n) / (n + 1))
+
+p4 = scatter(theoretical_quantiles, sorted_residus,
+             xlabel="Quantiles théoriques",
+             ylabel="Quantiles empiriques",
+             title="Q-Q Plot des Résidus",
+             label="",
+             color="#6495ED",
+             markersize=5,
+             size=(700, 500))
+
+# Ajouter la ligne de référence
+x_range = [minimum(theoretical_quantiles), maximum(theoretical_quantiles)]
+plot!(p4, x_range, x_range, color=:red, label="Ligne théorique", linewidth=2)
+
+display(p4)
+
+```
+
+Ce graphique compare les quantiles de nos résidus observés (axe vertical) avec les quantiles théoriques qu'ils devraient avoir s'ils suivaient parfaitement une loi normale (axe horizontal). Si les résidus sont normalement distribués, les points doivent s'aligner sur la diagonale rouge de référence.
+
+Sur notre graphique, nous observons un bon alignement de la grande majorité des points le long de la ligne théorique, particulièrement dans la partie centrale de la distribution. Cet alignement confirme visuellement que nos résidus suivent bien une distribution approximativement normale, validant ainsi l'hypothèse de normalité des erreurs qui est fondamentale pour notre modèle de régression linéaire.
+
+Nous remarquons néanmoins quelques légers écarts aux deux extrémités de la distribution (queues gauche et droite) : 3 à 4 points s'écartent de la ligne théorique de chaque côté. Ces écarts correspondent aux valeurs extrêmes de nos résidus (les observations pour lesquelles l'erreur de prédiction est la plus importante). Ces déviations aux extrémités sont toutefois attendues lorsque l'on travaille avec un échantillon de taille limitée comme le nôtre (96 observations). Elles ne remettent pas en cause la validité globale de l'hypothèse de normalité. 
+
+Ce Q-Q plot vient donc conforter les conclusions tirées de l'histogramme précédent et confirme que notre modèle respecte bien les hypothèses statistiques nécessaires.
+
+## Synthèse des hypothèses du modèle
+
+L'ensemble de ces quatre visualisations nous permet de valider les hypothèses fondamentales du modèle de régression linéaire, confirmant ainsi la pertinence de notre approche méthodologique.
+
+Le premier graphique (Observé vs Prédit) a démontré la linéarité de la relation entre nos variables explicatives et le taux d'ozone, l'alignement des points autour de la ligne $y=x$ confirmant que le modèle linéaire capture correctement cette relation.
+
+Le deuxième graphique (Résidus vs Valeurs prédites) a validé l'hypothèse d'homoscédasticité : la dispersion uniforme des résidus autour de zéro, sans forme en entonnoir, garantit que la précision de nos prédictions ne dépend pas du niveau d'ozone prédit.
+
+Les troisième et quatrième graphiques (Histogramme et Q-Q plot) ont confirmé la normalité des résidus. L'histogramme a révélé une distribution en cloche centrée sur zéro, tandis que le Q-Q plot a fourni une validation plus formelle avec un alignement des points sur la diagonale théorique. Cette normalité justifie l'utilisation des tests statistiques et intervalles de confiance calculés précédemment. Les quelques écarts observés aux extrémités du Q-Q plot et les valeurs extrêmes des résidus restent acceptables compte tenu de notre taille d'échantillon. 
+
+En conclusion, ces diagnostics convergent vers la validation complète du modèle : notre régression linéaire multiple respecte les hypothèses statistiques nécessaires et constitue un outil fiable pour la prédiction du taux d'ozone.
+
+# Validation croisée (k-fold cross-validation)
+
+Pour évaluer la robustesse et la généralisabilité de notre modèle de régression, nous utilisons une technique de validation croisée k-fold. Cette approche divise les données en k sous-ensembles (classes) et entraîne le modèle k fois, chaque fois en utilisant une classe comme ensemble de test et les k-1 autres comme ensemble d'entraînement. Cette méthode fournit une estimation plus fiable de la performance du modèle sur des données non vues.
+
+Nous avons choisi $k =$ 5 classes car :
+
+- Avec nos 96 observations, cela crée des ensembles de test d'environ 19 observations chacun, offrant un bon équilibre entre taille et variance.
+- $k=5$ est un standard dans la communauté scientifique (bon compromis entre biais et variance).
+- $k=5$ réduit les fluctuations dues au hasard tout en restant computationnellement efficace
+- Cela permet une estimation robuste sans surcharger les calculs
+
+```{julia}
+
+# Validation croisée k-fold (k=5)
+k = 5
+n = size(X, 1)
+Random.seed!(42)
+
+indices = shuffle(1:n)
+fold_size = div(n, k)
+
+cv_r2 = Float64[]
+
+for i in 1:k
+    # Indices de test et entraînement
+    test_idx = indices[(i-1)*fold_size+1:min(i*fold_size, n)]
+    train_idx = indices[setdiff(1:n, (i-1)*fold_size+1:min(i*fold_size, n))]
+    
+    # Diviser les données
+    X_train = [ones(length(train_idx)) Float64.(X[train_idx, :])]
+    y_train = Float64.(y[train_idx])
+    X_test = [ones(length(test_idx)) Float64.(X[test_idx, :])]
+    y_test = Float64.(y[test_idx])
+    
+    # Ajustement et prédiction
+    beta = inv(X_train' * X_train) * X_train' * y_train
+    y_pred = X_test * beta
+    
+    # Calcul du R^2
+    ss_res = sum((y_test .- y_pred) .^ 2)
+    ss_tot = sum((y_test .- mean(y_test)) .^ 2)
+    r2 = 1 - (ss_res / ss_tot)
+    
+    push!(cv_r2, r2)
+    println("Classe $i : R² = $(round(r2, digits = 2))")
+end
+
+println("-" ^ 40)
+println("R² moyen : $(round(mean(cv_r2), digits = 2)) ± $(round(std(cv_r2), digits = 2))")
+
+```
+
+Les résultats de la validation croisée révèlent un $R^2$ moyen de 0.67 ± 0.15, inférieur au $R^2$ de 0.75 obtenu sur l'ensemble complet des données. Cette baisse de performance est attendue car le modèle est entraîné sur moins de données (environ 80% à chaque itération) et testé sur des observations totalement indépendantes.
+
+Nous observons une variabilité importante entre les classes : le $R^2$ varie de 0.41 (Classe 1) à 0.77 (Classe 4). Cette dispersion, reflétée par l'écart-type de 0.15, indique que les performances du modèle dépendent de la composition de l'échantillon d'entraînement. La classe 1 se démarque particulièrement avec un $R^2$ faible de 0.41, suggérant que ce sous-ensemble contient des observations plus difficiles à prédire. En revanche, 4 des 5 classes affichent des $R^2$ compris entre 0.69 et 0.77, témoignant d'une certaine robustesse.
+
+Cette variabilité, bien que notable, reste acceptable compte tenu de la taille modeste de notre jeu de données (96 observations). L'écart entre le $R^2$ complet et le $R^2$ moyen confirme que notre modèle n'est pas en surapprentissage et possède une capacité de généralisation satisfaisante, malgré une sensibilité à la composition des échantillons.
+
+Afin de mieux visualiser cette variabilité des performances entre les classes, nous représentons graphiquement les $R^2$ obtenus.
+
+```{julia}
+
+# Graphique des R^2 par fold
+p = bar(1:k, cv_r2, 
+    xlabel="Classes", ylabel="R²", 
+    title="Validation Croisée - R² par classe",
+    label="R² de chaque fold", color="#6495ED", size=(700, 400), legend=:topleft)
+hline!(p, [mean(cv_r2)], label="Moyenne ($(round(mean(cv_r2), digits=2)))", color=:red, linewidth=2.5, linestyle=:dash)
+
+display(p)
+
+```
+
+Le graphique illustre la variabilité observée dans les résultats numériques précédents. Nous constatons que la classe 1, avec un $R^2$ de 0.41, se situe nettement en dessous de la ligne rouge moyenne (0.67), confirmant qu'il s'agit d'un cas particulier où le modèle a eu plus de difficultés à généraliser. Cette barre sensiblement plus basse que les autres visualise l'écart-type important de 0.15 que nous avions calculé.
+
+En revanche, les 4 autres classes présentent des hauteurs relativement homogènes, toutes situées entre 0.69 et 0.77, proches de la ligne rouge de référence. Cette concentration de 4 barres sur 5 autour de la moyenne confirme visuellement ce que nous avions observé : malgré la performance faible de ma classe 1, le modèle maintient une certaine robustesse sur la majorité des partitions.
+
+Cette visualisation met en évidence la sensibilité du modèle à la composition de l'échantillon d'entraînement, tout en confirmant que cette variabilité, bien que notable, n'empêche pas le modèle d'afficher des performances acceptables dans la plupart des cas. L'écart visible entre la classe 1 et les autres classes rappelle l'importance de la validation croisée pour détecter de telles disparités qui ne seraient pas apparentes avec une simple évaluation sur l'ensemble complet des données.
+
+Afin de vérifier si cette variabilité observée avec $k=5$ était spécifique à ce découpage particulier, nous avons également testé la validation croisée avec $k=4$ et $k=6$ classes. Avec $k=4$, nous avons constaté que la première classe présentait un $R^2$ bien inférieur à la moyenne, reproduisant le problème observé avec $k=5$. Avec $k=6$, la situation s'est même légèrement dégradée puisque deux classes (la classe 1 et la classe 5) affichaient des performances en dessous de la moyenne. Ces tests confirment que la variabilité observée n'est pas un artefact du choix de $k=5$, mais reflète plutôt une hétérogénéité réelle dans notre jeu de données.
+
+# Conclusion 
+
+***
+
+Ce travail de prédiction du taux d'ozone s'est construit sur un jeu de données présentant initialement plus de 37% de valeurs manquantes pour certaines variables. Le traitement de ces données manquantes par une approche mixte (suppression des observations où la variable cible était absente et imputation par interpolation linéaire pour les variables explicatives) a permis de conserver un maximum d'informations tout en maintenant la cohérence temporelle de nos mesures météorologiques. Cette étape préalable s'est avérée importante car elle nous a permis de disposer de 96 observations complètes pour la modélisation, tout en préservant les caractéristiques statistiques des séries temporelles.
+
+Par la suite, l'application d'un modèle de régression linéaire multiple à nos données météorologiques a permis d'obtenir des résultats globalement satisfaisants pour la prédiction du taux d'ozone. Avec un coefficient de détermination $R^2$ de 0.75 sur l'ensemble des données, notre modèle explique environ 75% de la variabilité observée dans les concentrations d'ozone, ce qui constitue une performance encourageante compte tenu de la complexité des phénomènes atmosphériques.
+
+L'analyse de significativité des coefficients a révélé que deux variables se distinguent par leur impact statistiquement significatif : le taux d'ozone de la veille (`maxO3v`, coefficient de 0.35) et la nébulosité matinale à 9h (`Ne9`, coefficient de -2.14). Ces résultats sont cohérents avec la formation de l'ozone : la persistance des conditions atmosphériques explique l'importance du taux d'ozone précédent, tandis que l'effet négatif de la couverture nuageuse s'explique par le rôle du rayonnement solaire dans la formation d'ozone. Les métriques d'erreur confirment cette qualité prédictive avec une RMSE de 14.29 et une erreur relative moyenne d'environ 13%.
+
+Les diagnostics graphiques ont validé les hypothèses fondamentales du modèle linéaire : linéarité de la relation, homoscédasticité des erreurs, et normalité des résidus. Ces vérifications confirment la robustesse statistique de nos estimations et la fiabilité des tests d'inférence réalisés.
+
+La validation croisée ($k=5$) a cependant révélé certaines limites. Avec un $R^2$ moyen de 0.67 et une variabilité importante entre les classes (de 0.41 à 0.77), le modèle montre une sensibilité à la composition de l'échantillon d'entraînement. Cette variabilité, certainement liée à la taille modeste de notre jeu de données (96 observations après traitement des valeurs manquantes), suggère que les prédictions doivent être interprétées avec prudence, particulièrement pour des conditions météorologiques extrêmes ou inhabituelles.
+
+En conclusion, notre modèle de régression linéaire multiple constitue un outil utile pour la prédiction du taux d'ozone à partir de variables météorologiques, avec des performances acceptables mais perfectibles. Les limites observées lors de la validation croisée ouvrent des perspectives d'amélioration : l'augmentation de la taille de l'échantillon, l'exploration de modèles non-linéaires, ou la sélection de variables pourraient permettre d'améliorer la robustesse et la capacité de généralisation des prédictions.
+
+
