@@ -1,0 +1,183 @@
+---
+title: |
+  ![](SSD.png){width=120px style="float:left; margin-right:20px;"} 
+  ![](Univ_Mtp.png){width=120px style="float:right; margin-left:20px;"}
+  
+  <div style="text-align: center; clear: both; padding-top: 1rem; color: #6495ED;">
+  TP n°4 : Traitement des données de lac
+  </div>
+subtitle: |
+  <div style="text-align: center; clear: both; padding-top: 1rem;">
+  HAX004X - Dirty Data
+  </div>
+author: 
+    - name: AIGOIN Emilie
+    - name: LABOURAIL Célia
+date: today
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: right
+    title-block-banner: true
+    number-sections: true
+    code-fold: true
+    code-tools: false
+    code-copy: true
+    df-print: paged
+    embed-resources: false
+    highlight-style: github
+execute:
+  engine: jupyter
+  echo: true
+  warning: false
+  message: false
+  cache: false
+lang: fr
+---
+
+<style>
+/* Titre principal */
+.quarto-title-block .quarto-title {
+  color: #6495ED !important;
+}
+
+/* Numéros de sections */
+.header-section-number {
+  color: #6495ED !important;
+}
+
+/* Traits horizontaux */
+hr {
+  border-color: #2563eb !important;
+  border-width: 2px !important;
+}
+
+/* Texte en justifié */
+body, p {
+  text-align: justify;
+  text-justify: inter-word;
+}
+</style>
+
+# Introduction
+
+***
+
+Ce rapport présente notre travail sur des données issues d'un lac sur une période d'environ 2 ans. Notre objectif était de faire une analyse rapide des données, de réduire le jeu de données à une fréquence de 1h15, de compléter les trous par interpolation raisonnable, de traiter les outliers éventuels et de produire des visualisations.
+
+Le long de ce travail, nous utiliserons le langage de programmation [Julia](https://julialang.org/), qui permet les applications de calcul numérique et la visualisation graphique. Tous nos codes sont disponibles en opensource sur notre page Github via [ce lien](https://github.com/EmilieAig/Dirty-Data).
+
+# Visualisation des données
+
+***
+
+Tout d'abord, afin de comprendre un peu mieux notre jeu de données, nous avons commencé par effectuer des visualisations. Pour cela, nous commençons par charger les bibliothèques nécessaires à la manipulation des données et à leur visualisation.
+
+```{julia}
+
+# Importer les packages
+
+using CSV
+using DataFrames
+using Dates
+using Plots
+using Statistics
+
+```
+
+Les données sont ensuite importées dans un tableau (dataframe), ce qui va nous permettre une manipulation structurée de nos données.
+
+```{julia}
+
+# Importer les données
+
+data = CSV.read("data_lake_2.csv", DataFrame)
+
+println("Premières lignes :")
+display(first(data, 5))
+
+println("\nDernières lignes :")
+display(last(data, 5))
+
+```
+
+Suite à l'importation de nos données sous forme d'un dataframe Julia et la visualisation des cinq premières lignes, nous observons 5 variables principales : 
+
+- La date et l'heure des mesures (`DATE`) comprises entre le 4 décembre 2019 et le 8 juillet 2022.
+- Le palier de profondeur (`palier`) avec la surface qui correspond au palier 1 et le fond qui correspond au palier 5.
+- La température de l'eau (`Twater`).
+- La saturation en oxygène (`O2sat`).
+- La chlorophylle totale (`Chltot`).
+
+Nous voyons qu'il y a des données manquantes dans notre jeu de données, et notamment les dernières valeurs pour les mesures de chlorophylle. Nous allons observer la proportion de données manquantes et les traiter par la suite.
+
+De plus, nous remarquons que la colonne de date est bien de type `DateTime` et que les valeurs manquantes sont bien sous la forme `missing`. Ainsi, nous n'avons pas besoin de manipuler le format de nos variables pour faire les premières visualisations graphiques.
+
+Pour commencer notre exploration visuelle, nous allons créer un graphique qui représente l'évolution de nos quatre variables d'intérêt au cours du temps.
+
+```{julia}
+
+# Créer le graphique avec toutes les courbes
+
+p = plot(data.DATE, data.O2sat, 
+     label = "Saturation en oxygène (%)", 
+     xlabel = "Date", 
+     ylabel = "Valeur",
+     linewidth = 1.5,
+     color = "#6495ED",
+     legend = :topleft,
+     size = (780, 600),
+     title = "Evolution des paramètres du lac")
+
+plot!(p, data.DATE, data.Chltot, 
+     label = "Chlorophylle totale (µg/L)",
+     linewidth = 1.5,
+     color = "#00008B")
+
+plot!(p, data.DATE, data.Twater, 
+     label = "Température de l'eau (°C)",
+     linewidth = 1.5,
+     color = "#9370DB")
+
+plot!(p, data.DATE, data.palier, 
+     label = "Palier de profondeur",
+     linewidth = 1.5,
+     color = "#FF1493")
+
+display(p)
+
+```
+
+Nous observons plusieurs éléments intéressants sur ce graphique. Tout d'abord, il est important de préciser que les quatre variables sont représentées sur un même graphique mais qu'elles n'ont pas les mêmes unités sur l'axe des ordonnées. La température varie entre 0 et environ 30°C, la saturation en oxygène entre 0 et 300%, la chlorophylle totale peut atteindre plus de 300 µg/L et avoir des valeurs négatives. Le palier de profondeur varie quant à lui entre 1 et 5. Cette superposition permet une vue d'ensemble des dynamiques temporelles mais nécessite une interprétation prudente des amplitudes.
+
+Ensuite, au niveau des données manquantes, nous constatons la présence de longues périodes sans données, notamment de fin 2020 à environ mars 2021, visibles par de grands traits horizontaux sans variation sur l'ensemble des variables. Ces périodes correspondent à des interruptions dans l'acquisition des données. Pour ces longues périodes manquantes, nous ne procéderons pas à une imputation car cela ne serait pas raisonnable statistiquement : interpoler sur plusieurs mois introduirait trop d'incertitude et de biais dans nos analyses.
+
+Au niveau des évolution globales, nous observons des variations importantes pour la plupart des variables, suggérant une dynamique potentiellement saisonnière. La température de l'eau (courbe violette) semble montrer des cycles annuels avec des valeurs plus élevées en été et plus basses en hiver.
+
+La saturation en oxygène (courbe bleu claire) présente une forte variabilité avec des pics importants pouvant dépasser 200%, voire atteindre 300%. Nous voyons également que cette variable semble présenter une certaine corrélation avec les variations de température et de chlorophylle.
+
+La chlorophylle totale (courbe bleu foncée) montre également une forte variabilité. Nous observons cependant des valeurs négatives, notamment au début des mesures, ce qui est physiquement impossible pour une concentration de chlorophylle. Ces valeurs témoignent d'erreurs de mesure ou de dysfonctionnements des capteurs et devront être traitées comme des outliers à supprimer ou corriger.
+
+Enfin, la variable palier de profondeur (courbe rose) reste relativement stable avec des mesures effectuées principalement aux paliers 1 (surface) et 5 (fond), avec quelques transitions entre ces niveaux.
+
+Avant de procéder au nettoyage et à la transformation de nos données, il est essentiel de définir l'ordre des opérations à effectuer. En effet, l'ordre dans lequel nous appliquons les différents traitements peut avoir un impact important sur la qualité finale de nos données. Nous procéderons dans l'ordre suivant : regroupement par blocs de temps de 1h15, traitement des outliers, et imputation des données manquantes. Cette logique se justifie par plusieurs raisons. Tout d'abord, le regroupement temporel permet de réduire la granularité des données et de diminuer le volume à traiter, ce qui facilitera les étapes suivantes. De plus, l'agrégation par blocs de temps peut naturellement atténuer certains outliers ponctuels grâce aux calculs de moyennes. Ensuite, il est préférable de traiter les outliers avant l'imputation car ces valeurs aberrantes pourraient fausser les méthodes d'interpolation et propager des erreurs dans les données imputées. Enfin, une fois les données agrégées et nettoyées des valeurs aberrantes, nous pourrons procéder à l'imputation des valeurs manquantes de manière plus fiable, en nous basant sur des données déjà cohérentes et représentatives de la dynamique réelle du lac.
+
+# Regroupement par période de temps
+
+***
+
+# Traitement des valeurs aberrantes
+
+***
+
+# Imputation des données manquantes
+
+
+
+
+
+
+
