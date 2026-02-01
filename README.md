@@ -1,7 +1,7 @@
 # HAX004X - Dirty Data
 
 ## Description générale
-Ce dépôt regroupe les projets réalisés dans le cadre de l'UE **HAX004X - Dirty Data** du Master SSD à l'Université de Montpellier. Les projets portent sur le traitement et l'analyse de données biologiques et environnementales contaminées par du bruit de mesure et des valeurs aberrantes.
+Ce dépôt regroupe les projets réalisés dans le cadre de l'UE **HAX004X - Dirty Data** du Master SSD à l'Université de Montpellier. Les projets portent sur le traitement et l'analyse de données biologiques et environnementales contaminées par des valeurs aberrantes et des données manquantes.
 
 ## Projets
 
