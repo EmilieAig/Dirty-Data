@@ -169,6 +169,99 @@ Avant de procéder au nettoyage et à la transformation de nos données, il est 
 
 ***
 
+Nous allons maintenant réduire la fréquence d'échantillonnage de nos données en regroupant les mesures par blocs de 1 heure et 15 minutes (75 minutes). Cette agrégation temporelle présente plusieurs avantages majeurs pour notre analyse. Premièrement, elle permet de réduire considérablement le volume de données à traiter, passant de 91 698 lignes à un nombre beaucoup plus réduit, ce qui facilitera les calculs et améliorera les performances de traitement. Deuxièmement, cette approche lisse naturellement les variations à très haute fréquence qui sont souvent dues au bruit de mesure ou à des fluctuations instrumentales, permettant ainsi de mieux révéler les tendances sous-jacentes dans les données. Enfin, cette réduction de la granularité temporelle facilite grandement les étapes ultérieures de notre pipeline de traitement, notamment la détection des outliers et l'imputation des données manquantes, en travaillant sur des données plus stables et représentatives. Pour effectuer cette agrégation, nous allons créer une fonction qui arrondit chaque timestamp au début du bloc de 1h15 auquel il appartient, puis calculer la moyenne des mesures pour chaque combinaison de palier et de bloc temporel.
+
+```{julia}
+
+# FAggregation donné
+
+function floor_to_interval(dt::DateTime, minutes::Int)
+
+    epoch = DateTime(2019, 1, 1)
+    minutes_since_epoch = Dates.value(dt - epoch) ÷ 60000  # Convertir en minutes
+    
+  
+    floored_minutes = (minutes_since_epoch ÷ minutes) * minutes
+    
+    # Retourner le DateTime correspondant
+    return epoch + Dates.Minute(floored_minutes)
+end
+
+# Créer une nouvelle colonne avec les timestamps arrondis à 1h15
+
+data[!, :DATE_1h15] = floor_to_interval.(data.DATE, 75)
+
+
+println("Date originale          -> Date arrondie (1h15)")
+for i in 1:5
+    println(data.DATE[i], " -> ", data.DATE_1h15[i])
+end
+
+```
+
+Maintenant que nous avons créé les blocs temporels, nous allons agréger les données en calculant la moyenne de chaque variable pour chaque combinaison de palier et de bloc de 1h15. Nous utilisons la moyenne car elle est robuste pour des données continues et permet de lisser les variations rapides tout en conservant la tendance générale. Cependant, nous devons être prudents avec les données manquantes : si toutes les valeurs d'un bloc sont manquantes, nous conserverons une valeur manquante pour ce bloc afin de ne pas introduire de biais artificiel.
+```{julia}
+
+# Agréger les données par palier et par bloc de 1h15
+
+data_agg = combine(groupby(data, [:DATE_1h15, :palier])) do df
+    DataFrame(
+        Twater = ismissing(df.Twater) || all(ismissing, df.Twater) ? missing : mean(skipmissing(df.Twater)),
+        O2sat = ismissing(df.O2sat) || all(ismissing, df.O2sat) ? missing : mean(skipmissing(df.O2sat)),
+        Chltot = ismissing(df.Chltot) || all(ismissing, df.Chltot) ? missing : mean(skipmissing(df.Chltot)),
+        n_mesures = nrow(df)
+    )
+end
+
+# Renommer et trier
+rename!(data_agg, :DATE_1h15 => :DATE)
+sort!(data_agg, [:DATE, :palier])
+
+println("\nNombre de lignes avant agrégation : $(nrow(data))")
+println("Nombre de lignes après agrégation : $(nrow(data_agg))")
+println("Taux de réduction : $(round(100 * (1 - nrow(data_agg)/nrow(data)), digits=2))%")
+
+println("\nPremières lignes après agrégation :")
+display(first(data_agg, 10))
+
+```
+
+Nous observons une réduction significative du nombre de lignes après l'agrégation temporelle. Les données sont maintenant structurées avec une fréquence de 1h15, ce qui facilite grandement les analyses temporelles tout en conservant la dynamique essentielle des variables mesurées.
+
+Visualisons maintenant les données agrégées pour comparer avec les données brutes.
+
+```{julia}
+
+# Visualisation des données agrégées par palier
+
+p1 = plot(title="Température de l'eau par palier", xlabel="Date", ylabel="Température (°C)", 
+          legend=:topright, size=(900, 500))
+p2 = plot(title="Saturation en O₂ par palier", xlabel="Date", ylabel="O₂ saturation (%)", 
+          legend=:topright, size=(900, 500))
+p3 = plot(title="Chlorophylle totale par palier", xlabel="Date", ylabel="Chlorophylle (µg/L)", 
+          legend=:topright, size=(900, 500))
+
+couleurs = [:red, :orange, :green, :blue, :purple]
+
+for pal in 1:5
+    d_pal = filter(row -> row.palier == pal, data_agg)
+    
+    plot!(p1, d_pal.DATE, d_pal.Twater, 
+          label="Palier $pal", color=couleurs[pal], linewidth=1.5, alpha=0.8)
+    
+    plot!(p2, d_pal.DATE, d_pal.O2sat, 
+          label="Palier $pal", color=couleurs[pal], linewidth=1.5, alpha=0.8)
+    
+    plot!(p3, d_pal.DATE, d_pal.Chltot, 
+          label="Palier $pal", color=couleurs[pal], linewidth=1.5, alpha=0.8)
+end
+
+plot(p1, p2, p3, layout=(3,1), size=(900, 1200))
+
+```
+
+Ces graphiques permettent une lecture statistique des distributions temporelles par palier. La température présente une variabilité modérée et une structure saisonnière marquée (dispersion plus faible que les autres variables), avec des différences de niveau entre paliers suggérant une stratification. La saturation en oxygène montre une dispersion forte, une asymétrie positive (pics de sursaturation) et quelques valeurs extrêmes très faibles, indiquant la présence d’outliers. La chlorophylle totale est la variable la plus hétérogène, avec une distribution très étalée, des maxima élevés (bloom algal) et des valeurs négatives aberrantes en début de série. Les ruptures de courbe signalent en outre des proportions non négligeables de données manquantes, qui devront être prises en compte dans les traitements suivants.
+
 # Traitement des valeurs aberrantes
 
 ***
