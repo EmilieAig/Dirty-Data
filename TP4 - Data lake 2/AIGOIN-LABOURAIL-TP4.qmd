@@ -387,6 +387,152 @@ Au total, 402 outliers ont été détectés par le Z-score robuste et 75 valeurs
 
 ***
 
+Maintenant que nous avons traité les valeurs aberrantes, nous devons imputer les valeurs manquantes créées lors du nettoyage des outliers. Nous avons remplacé 477 valeurs aberrantes par des valeurs manquantes, principalement pour la chlorophylle totale. Ces gaps sont généralement de petite taille (quelques valeurs isolées), ce qui rend l'interpolation particulièrement appropriée.
+
+Pour imputer ces valeurs manquantes, nous allons adopter une approche en deux étapes qui respecte la stratification verticale du lac. Premièrement, nous effectuerons une interpolation linéaire pour chaque palier séparément, ce qui permet de combler les petits gaps en s'appuyant sur les valeurs temporellement adjacentes au sein du même palier. Deuxièmement, si certaines valeurs manquent encore après l'interpolation (notamment en début ou fin de série), nous utiliserons la médiane du palier correspondant comme valeur de remplacement. Cette approche hybride garantit que chaque palier conserve ses caractéristiques propres tout en préservant les tendances temporelles des données.
+
+Il est important de noter que nous ne chercherons pas à imputer les longues périodes sans données (comme celle de fin 2020 à mars 2021), car interpoler sur plusieurs mois introduirait trop d'incertitude et de biais dans nos analyses. Notre objectif est uniquement de combler les gaps créés par le nettoyage des outliers.
+
+```{julia}
+
+# Imputation des valeurs manquantes
+
+# Vérifier les valeurs manquantes avant imputation
+println("Valeurs manquantes AVANT imputation :")
+println("  Température : ", sum(ismissing, data_clean.Twater))
+println("  O₂ saturation : ", sum(ismissing, data_clean.O2sat))
+println("  Chlorophylle : ", sum(ismissing, data_clean.Chltot))
+println()
+
+# Fonction d'interpolation linéaire avec limite de gap
+function interpolate_linear(values, max_gap=100)
+    n = length(values)
+    result = copy(values)
+    
+    # Trouver les indices non manquants
+    valid_idx = findall(!ismissing, values)
+    
+    if length(valid_idx) < 2
+        return result  # Pas assez de points pour interpoler
+    end
+    
+    # Interpoler entre chaque paire de points valides
+    for i in 1:(length(valid_idx)-1)
+        idx_start = valid_idx[i]
+        idx_end = valid_idx[i+1]
+        
+        gap_size = idx_end - idx_start - 1  # Nombre de valeurs manquantes
+        
+        # N'interpoler que si le gap est suffisamment petit
+        if gap_size > 0 && gap_size <= max_gap
+            val_start = values[idx_start]
+            val_end = values[idx_end]
+            
+            # Interpolation linéaire
+            for j in (idx_start+1):(idx_end-1)
+                t = (j - idx_start) / (idx_end - idx_start)
+                result[j] = val_start + t * (val_end - val_start)
+            end
+        end
+    end
+    
+    return result
+end
+
+# Imputation par palier
+for pal in 1:5
+    # Filtrer les données du palier
+    mask = data_clean.palier .== pal
+    indices = findall(mask)
+    
+    # Pour chaque variable, interpoler les valeurs manquantes
+    for var in [:Twater, :O2sat, :Chltot]
+        # Récupérer les valeurs du palier
+        vals = data_clean[indices, var]
+        
+        # Compter les valeurs manquantes avant
+        n_missing_avant = sum(ismissing, vals)
+        
+        # Interpolation linéaire pour les petits gaps
+        vals_interp = interpolate_linear(vals)
+        
+        # Si des valeurs manquent encore, utiliser la médiane du palier
+        if any(ismissing, vals_interp)
+            med = median(skipmissing(vals_interp))
+            for i in 1:length(vals_interp)
+                if ismissing(vals_interp[i])
+                    vals_interp[i] = med
+                end
+            end
+        end
+        
+        # Compter les valeurs imputées
+        n_imputed = n_missing_avant - sum(ismissing, vals_interp)
+        
+        if n_imputed > 0
+            nom = var == :Twater ? "Température" : (var == :O2sat ? "O2 sat" : "Chlorophylle")
+            println("$nom - Palier $pal : $n_imputed valeurs imputées")
+        end
+        
+        # Remettre les valeurs interpolées
+        data_clean[indices, var] = vals_interp
+    end
+end
+
+println("\nValeurs manquantes APRÈS imputation :")
+println("  Température : ", sum(ismissing, data_clean.Twater))
+println("  O₂ saturation : ", sum(ismissing, data_clean.O2sat))
+println("  Chlorophylle : ", sum(ismissing, data_clean.Chltot))
+
+```
+
+Nous observons que l'imputation a été réalisée avec succès. Les 477 valeurs manquantes créées lors du nettoyage des outliers ont été imputées, principalement pour la chlorophylle totale (environ 400 valeurs) et réparties sur l'ensemble des paliers. L'interpolation linéaire a permis de combler ces gaps en préservant les tendances temporelles au sein de chaque palier.
+
+Il est important de noter que nous conservons encore des valeurs manquantes dans notre jeu de données, notamment pour les longues périodes sans acquisition de données. Ces valeurs manquantes ne seront pas imputées car elles correspondent à des interruptions prolongées des mesures, et toute tentative d'imputation sur ces périodes introduirait trop d'incertitude dans les analyses.
+
+Pour visualiser l'effet de l'imputation, nous allons comparer les données de chlorophylle avant et après le traitement complet (nettoyage des outliers + imputation). Cette comparaison nous permettra de vérifier que les valeurs imputées s'intègrent naturellement dans les séries temporelles.
+
+```{julia}
+
+# Comparaison avant/après traitement complet pour la chlorophylle
+
+p = plot(title="Chlorophylle totale - Comparaison avant/après traitement complet", 
+         xlabel="Date", ylabel="Chlorophylle (µg/L)", 
+         legend=:topright, size=(900, 500), left_margin=5Plots.mm)
+
+# Filtrer les valeurs non manquantes pour chaque série
+dates_agg = [data_agg.DATE[i] for i in 1:nrow(data_agg) if !ismissing(data_agg.Chltot[i])]
+chltot_agg = [data_agg.Chltot[i] for i in 1:nrow(data_agg) if !ismissing(data_agg.Chltot[i])]
+
+dates_clean = [data_clean.DATE[i] for i in 1:nrow(data_clean) if !ismissing(data_clean.Chltot[i])]
+chltot_clean = [data_clean.Chltot[i] for i in 1:nrow(data_clean) if !ismissing(data_clean.Chltot[i])]
+
+# Données avec outliers
+scatter!(p, dates_agg, chltot_agg, 
+         label="Données agrégées (avec outliers)", 
+         color=:lightblue, 
+         markersize=2, 
+         alpha=0.4,
+         markerstrokewidth=0)
+
+# Données nettoyées + imputées
+scatter!(p, dates_clean, chltot_clean, 
+         label="Données finales (nettoyées + imputées)", 
+         color=:deeppink, 
+         markersize=2, 
+         alpha=0.6,
+         markerstrokewidth=0)
+
+display(p)
+
+```
+
+Ce graphique final illustre l'ensemble du traitement appliqué à nos données de chlorophylle. La comparaison entre les données agrégées originales (en bleu clair) et les données finales (en rose) révèle plusieurs améliorations significatives.
+
+Les valeurs négatives visibles au début de la série (début 2020) ont été supprimées, ainsi que les pics extrêmes physiquement impossibles (notamment le pic à ~400 µg/L). Ces anomalies provenaient vraisemblablement de dysfonctionnements de capteurs. Les petits gaps créés par la suppression de ces outliers (généralement quelques heures à quelques jours) ont été comblés par interpolation linéaire, une approche qui préserve les tendances temporelles sans introduire de ruptures artificielles. En revanche, les longues périodes sans données (notamment fin 2020 - début 2021) n'ont volontairement pas été imputées car interpoler sur plusieurs mois introduirait des données artificielles sans fondement scientifique et pourrait biaiser les analyses ultérieures. Cette décision méthodologique garantit l'intégrité statistique du jeu de données.
+
+Les données finales conservent toutes les variations naturelles importantes, y compris pics de chlorophylle en 2021, tout en éliminant uniquement les anomalies instrumentales avérées. Cette stratégie d'imputation sélective, combinant interpolation linéaire pour les petits gaps et imputation par médiane par palier pour les valeurs isolées, s'est révélée efficace pour améliorer la qualité des données tout en respectant la structure verticale du lac et les dynamiques écologiques réelles.
+
 # Conclusion 
 
 ***
