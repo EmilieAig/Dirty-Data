@@ -161,7 +161,7 @@ La saturation en oxygène (courbe bleu claire) présente une forte variabilité 
 
 La chlorophylle totale (courbe bleu foncée) montre également une forte variabilité. Nous observons cependant des valeurs négatives, notamment au début des mesures, ce qui est physiquement impossible pour une concentration de chlorophylle. Ces valeurs témoignent d'erreurs de mesure ou de dysfonctionnements des capteurs et devront être traitées comme des outliers à supprimer ou corriger.
 
-Enfin, la variable palier de profondeur (courbe rose) reste relativement stable avec des mesures effectuées principalement aux paliers 1 (surface) et 5 (fond), avec quelques transitions entre ces niveaux.
+Enfin, la variable palier de profondeur (courbe rose) reste relativement stable avec des mesures effectuées principalement à chaque fois aux paliers de 1 (surface) à 5 (fond), avec quelques mesures qui n'ont pas été prises à tout les niveaux.
 
 Avant de procéder au nettoyage et à la transformation de nos données, il est essentiel de définir l'ordre des opérations à effectuer. En effet, l'ordre dans lequel nous appliquons les différents traitements peut avoir un impact important sur la qualité finale de nos données. Nous procéderons dans l'ordre suivant : regroupement par blocs de temps de 1h15, traitement des outliers, et imputation des données manquantes. Cette logique se justifie par plusieurs raisons. Tout d'abord, le regroupement temporel permet de réduire la granularité des données et de diminuer le volume à traiter, ce qui facilitera les étapes suivantes. De plus, l'agrégation par blocs de temps peut naturellement atténuer certains outliers ponctuels grâce aux calculs de moyennes. Ensuite, il est préférable de traiter les outliers avant l'imputation car ces valeurs aberrantes pourraient fausser les méthodes d'interpolation et propager des erreurs dans les données imputées. Enfin, une fois les données agrégées et nettoyées des valeurs aberrantes, nous pourrons procéder à l'imputation des valeurs manquantes de manière plus fiable, en nous basant sur des données déjà cohérentes et représentatives de la dynamique réelle du lac.
 
@@ -169,46 +169,46 @@ Avant de procéder au nettoyage et à la transformation de nos données, il est 
 
 ***
 
-Nous allons maintenant réduire la fréquence d'échantillonnage de nos données en regroupant les mesures par blocs de 1 heure et 15 minutes (75 minutes). Cette agrégation temporelle présente plusieurs avantages majeurs pour notre analyse. Premièrement, elle permet de réduire considérablement le volume de données à traiter, passant de 91 698 lignes à un nombre beaucoup plus réduit, ce qui facilitera les calculs et améliorera les performances de traitement. Deuxièmement, cette approche lisse naturellement les variations à très haute fréquence qui sont souvent dues au bruit de mesure ou à des fluctuations instrumentales, permettant ainsi de mieux révéler les tendances sous-jacentes dans les données. Enfin, cette réduction de la granularité temporelle facilite grandement les étapes ultérieures de notre pipeline de traitement, notamment la détection des outliers et l'imputation des données manquantes, en travaillant sur des données plus stables et représentatives. Pour effectuer cette agrégation, nous allons créer une fonction qui arrondit chaque timestamp au début du bloc de 1h15 auquel il appartient, puis calculer la moyenne des mesures pour chaque combinaison de palier et de bloc temporel.
+Nous allons maintenant réduire la fréquence d'échantillonnage de nos données en regroupant les mesures par blocs de 1 heure et 15 minutes (soit 75 minutes). Cette agrégation temporelle présente plusieurs avantages pour notre analyse. 
+
+D'abord, elle permet de réduire le volume de données à traiter, ce qui facilitera les calculs et les traitements ultérieurs. Ensuite, cette approche lisse naturellement les variations à très haute fréquence qui sont souvent dues au bruit de mesure, permettant ainsi de mieux révéler les tendances réelles dans les données. Enfin, cette réduction facilite les étapes suivantes de notre traitement, notamment la détection des outliers et l'imputation des données manquantes, en travaillant sur des données plus stables et représentatives. 
+
+Pour effectuer cette agrégation, nous allons créer une fonction qui arrondit chaque bloc de temps au début du bloc de 1h15 auquel il appartient, puis calculer la moyenne des mesures pour chaque combinaison de palier et de bloc temporel.
 
 ```{julia}
 
-# FAggregation donné
+# Agrégation des données par blocs de 1h15
 
 function floor_to_interval(dt::DateTime, minutes::Int)
-
-    epoch = DateTime(2019, 1, 1)
-    minutes_since_epoch = Dates.value(dt - epoch) ÷ 60000  # Convertir en minutes
-    
-  
+    epoch = DateTime(2019, 12, 4, 16, 0, 0)  # Première date des données
+    minutes_since_epoch = Dates.value(dt - epoch) ÷ 60000  # Convertir en min
     floored_minutes = (minutes_since_epoch ÷ minutes) * minutes
-    
-    # Retourner le DateTime correspondant
     return epoch + Dates.Minute(floored_minutes)
 end
 
 # Créer une nouvelle colonne avec les timestamps arrondis à 1h15
-
 data[!, :DATE_1h15] = floor_to_interval.(data.DATE, 75)
 
-
-println("Date originale          -> Date arrondie (1h15)")
-for i in 1:5
+println("Date originale     -> Date arrondie (1h15)")
+for i in 1:20
     println(data.DATE[i], " -> ", data.DATE_1h15[i])
 end
 
 ```
 
-Maintenant que nous avons créé les blocs temporels, nous allons agréger les données en calculant la moyenne de chaque variable pour chaque combinaison de palier et de bloc de 1h15. Nous utilisons la moyenne car elle est robuste pour des données continues et permet de lisser les variations rapides tout en conservant la tendance générale. Cependant, nous devons être prudents avec les données manquantes : si toutes les valeurs d'un bloc sont manquantes, nous conserverons une valeur manquante pour ce bloc afin de ne pas introduire de biais artificiel.
+Nous observons que la fonction fonctionne correctement : toutes les dates originales sont bien arrondies au début du bloc de 1h15 correspondant. Par exemple, les mesures prises entre 16h00 et 17h15 sont toutes regroupées sur 16h00, et celles entre 17h15 et 18h30 sont regroupées sur 17h15. Cette agrégation nous permettra de passer à l'étape suivante : le calcul des moyennes par bloc temporel.
+
+Maintenant que nous avons créé les blocs temporels, nous allons agréger les données en calculant la moyenne de chaque variable pour chaque combinaison de palier et de bloc de 1h15. Nous utilisons la moyenne car elle permet de lisser les variations rapides tout en conservant la tendance générale. Cependant, nous devons être prudents avec les données manquantes : si toutes les valeurs d'un bloc sont manquantes, nous conserverons une valeur manquante pour ce bloc afin de ne pas introduire de biais.
+
 ```{julia}
 
 # Agréger les données par palier et par bloc de 1h15
 
 data_agg = combine(groupby(data, [:DATE_1h15, :palier])) do df
     DataFrame(
-        Twater = ismissing(df.Twater) || all(ismissing, df.Twater) ? missing : mean(skipmissing(df.Twater)),
-        O2sat = ismissing(df.O2sat) || all(ismissing, df.O2sat) ? missing : mean(skipmissing(df.O2sat)),
-        Chltot = ismissing(df.Chltot) || all(ismissing, df.Chltot) ? missing : mean(skipmissing(df.Chltot)),
+        Twater = all(ismissing, df.Twater) ? missing : round(mean(skipmissing(df.Twater)), digits=3),
+        O2sat = all(ismissing, df.O2sat) ? missing : round(mean(skipmissing(df.O2sat)), digits=3),
+        Chltot = all(ismissing, df.Chltot) ? missing : round(mean(skipmissing(df.Chltot)), digits=3),
         n_mesures = nrow(df)
     )
 end
@@ -221,25 +221,24 @@ println("\nNombre de lignes avant agrégation : $(nrow(data))")
 println("Nombre de lignes après agrégation : $(nrow(data_agg))")
 println("Taux de réduction : $(round(100 * (1 - nrow(data_agg)/nrow(data)), digits=2))%")
 
-println("\nPremières lignes après agrégation :")
 display(first(data_agg, 10))
 
 ```
 
-Nous observons une réduction significative du nombre de lignes après l'agrégation temporelle. Les données sont maintenant structurées avec une fréquence de 1h15, ce qui facilite grandement les analyses temporelles tout en conservant la dynamique essentielle des variables mesurées.
+Nous observons une réduction importante du nombre de lignes après l'agrégation temporelle, passant de 91 698 lignes à 30 569 lignes, soit une réduction de plus de 66%. Les données sont maintenant structurées avec une fréquence de 1h15, ce qui facilite les analyses tout en conservant la dynamique essentielle des variables mesurées. Nous remarquons également que chaque bloc contient en général 3 mesures originales, ce qui confirme la régularité de l'acquisition des données (environ une mesure toutes les 25 minutes). Les valeurs agrégées correspondent bien aux moyennes attendues pour chaque combinaison de date et de palier, avec des moyennes plutôt similaires pour la température et la saturation en O2, mais plutôt différente en fonction des paliers pour la chlorophylle totale.
 
-Visualisons maintenant les données agrégées pour comparer avec les données brutes.
+Visualisons maintenant les données agrégées en séparant les différents paliers de profondeur afin d'observer la stratification du lac et les différences avec les données brutes.
 
 ```{julia}
 
 # Visualisation des données agrégées par palier
 
 p1 = plot(title="Température de l'eau par palier", xlabel="Date", ylabel="Température (°C)", 
-          legend=:topright, size=(900, 500))
+          legend=:topright, size=(700, 500))
 p2 = plot(title="Saturation en O₂ par palier", xlabel="Date", ylabel="O₂ saturation (%)", 
-          legend=:topright, size=(900, 500))
+          legend=:topright, size=(700, 500))
 p3 = plot(title="Chlorophylle totale par palier", xlabel="Date", ylabel="Chlorophylle (µg/L)", 
-          legend=:topright, size=(900, 500))
+          legend=:topright, size=(700, 500), left_margin=5Plots.mm)
 
 couleurs = [:red, :orange, :green, :blue, :purple]
 
@@ -256,21 +255,141 @@ for pal in 1:5
           label="Palier $pal", color=couleurs[pal], linewidth=1.5, alpha=0.8)
 end
 
-plot(p1, p2, p3, layout=(3,1), size=(900, 1200))
+plot(p1, p2, p3, layout=(3,1), size=(800, 1200))
 
 ```
 
-Ces graphiques permettent une lecture statistique des distributions temporelles par palier. La température présente une variabilité modérée et une structure saisonnière marquée (dispersion plus faible que les autres variables), avec des différences de niveau entre paliers suggérant une stratification. La saturation en oxygène montre une dispersion forte, une asymétrie positive (pics de sursaturation) et quelques valeurs extrêmes très faibles, indiquant la présence d’outliers. La chlorophylle totale est la variable la plus hétérogène, avec une distribution très étalée, des maxima élevés (bloom algal) et des valeurs négatives aberrantes en début de série. Les ruptures de courbe signalent en outre des proportions non négligeables de données manquantes, qui devront être prises en compte dans les traitements suivants.
+Ces graphiques nous permettent d'observer plusieurs éléments importants. Tout d'abord, nous constatons que l'agrégation par blocs de 1h15 a permis de lisser les données par rapport aux données brutes visualisées précédemment, tout en conservant les tendances principales et la dynamique saisonnière.
+
+Concernant la température de l'eau, nous observons une forte homogénéité entre les différents paliers de profondeur. Les courbes des cinq paliers se superposent presque totalement, suggérant que le lac présente une température relativement uniforme sur toute la colonne d'eau. Nous remarquons une saisonnalité marquée avec des températures comprises entre 5°C en hiver et environ 27°C en été.
+
+La saturation en oxygène présente une variabilité beaucoup plus importante et des différences notables entre les paliers, surtout en fin 2021 lorsque nous voyons des valeurs très élévés pour les premires paliers. Les paliers de surface (paliers 1 et 2, en rouge et orange) montrent des pics de sursaturation très élevés, dépassant parfois 250%. Les paliers plus profonds (paliers 4 et 5, en bleu et violet) présentent des valeurs globalement plus faibles et des chutes importantes, notamment en 2021, où la saturation descend proche de 0%. Ces différences entre paliers révèlent une stratification verticale de l'oxygène dans le lac.
+
+La chlorophylle totale montre également une forte variabilité temporelle et des différences entre paliers. Nous observons des pics importants notamment en 2021, avec des valeurs atteignant près de 400 µg/L. Ces pics semblent plus marqués aux paliers de surface. Nous remarquons également la présence de valeurs négatives aberrantes, notamment en début de série (début 2020), qui confirment les dysfonctionnements de capteurs identifiés précédemment et qui devront être traités dans la prochaine étape. De plus, nous observons quelques valeurs extrêmes isolées (notamment un pic négatif important au palier 5 en fin de série) qui constituent également des outliers à corriger.
 
 # Traitement des valeurs aberrantes
 
 ***
 
+Maintenant que nos données sont agrégées, nous allons procéder au traitement des valeurs aberrantes. Comme nous l'avons observé lors de la visualisation, certaines variables présentent des valeurs physiquement impossibles, notamment pour la chlorophylle avec des valeurs négatives. Ces outliers peuvent provenir de dysfonctionnements de capteurs ou encore d'erreurs de transmission.
+
+Pour identifier ces valeurs aberrantes, nous allons combiner deux approches complémentaires. D'abord, nous appliquerons des seuils physiques : la chlorophylle ne peut pas être négative. Ensuite, nous utiliserons un Z-score robuste basé sur la médiane plutôt que sur la moyenne, car cette méthode est moins sensible aux outliers eux-mêmes. Pour chaque variable et chaque palier, nous calculerons le Z-score robuste défini par :
+
+$$ Z_i = \frac{X_i - \text{median}(X)}{\text{MAD}} $$
+
+où MAD (Median Absolute Deviation) est un estimateur d'échelle robuste calculé comme la médiane des écarts absolus à la médiane. Les valeurs dont le Z-score robuste dépasse un seuil seront considérées comme des outliers.
+
+Une fois identifiés, ces outliers seront remplacés par des valeurs manquantes plutôt que supprimés, ce qui permettra de les imputer de manière cohérente lors de la prochaine étape.
+
+```{julia}
+
+# Copie des données agrégées pour traitement
+data_clean = copy(data_agg)
+
+# Seuil pour le Z-score robuste
+seuil_zscore = 15
+
+# Compteurs d'outliers
+n_outliers_physiques = 0
+n_outliers_zscore = 0
+
+# Chlorophylle négative
+n_chl_neg = 0
+for i in 1:nrow(data_clean)
+    if !ismissing(data_clean.Chltot[i]) && data_clean.Chltot[i] < 0
+        data_clean.Chltot[i] = missing
+        n_chl_neg += 1
+    end
+end
+println("Chlorophylle négative : $n_chl_neg valeurs remplacées\n")
+
+# Détection par Z-score robuste pour chaque variable et chaque palier
+for var in [:Twater, :O2sat, :Chltot]
+    nom = var == :Twater ? "Température" : (var == :O2sat ? "O2 saturation" : "Chlorophylle")
+    
+    for pal in 1:5
+        # Récupérer les valeurs du palier
+        valeurs = [data_clean[i, var] for i in 1:nrow(data_clean) if data_clean.palier[i] == pal]
+        valeurs_clean = filter(!ismissing, valeurs)
+        
+        if length(valeurs_clean) > 0
+            # Calculer médiane et MAD
+            med = median(valeurs_clean)
+            mad_val = median(abs.(valeurs_clean .- med))
+            
+            if mad_val > 1e-10
+                # Identifier et remplacer les outliers
+                n_outliers_pal = 0
+                for i in 1:nrow(data_clean)
+                    if data_clean.palier[i] == pal && !ismissing(data_clean[i, var])
+                        z_score = abs((data_clean[i, var] - med) / (1.4826 * mad_val))
+                        if z_score > seuil_zscore
+                            data_clean[i, var] = missing
+                            n_outliers_pal += 1
+                        end
+                    end
+                end
+                
+                if n_outliers_pal > 0
+                    n_outliers_zscore += n_outliers_pal
+                    println("$nom - Palier $pal : $n_outliers_pal outliers détectés")
+                end
+            end
+        end
+    end
+end
+
+println("\nOutliers par Z-score robuste : $n_outliers_zscore")
+
+```
+
+Nous observons que le traitement des outliers a permis d'identifier et de corriger un nombre important de valeurs aberrantes. Au total, 75 valeurs de chlorophylle négatives ont été détectées et remplacées, confirmant les dysfonctionnements de capteurs observés lors de la visualisation initiale.
+
+La détection par Z-score robuste a identifié 402 outliers supplémentaires sur un total d'environ 30 600 observations, soit environ 12% des données. Tous ces outliers concernent la chlorophylle, avec environ 400 valeurs aberrantes réparties sur l'ensemble des paliers. Cette forte proportion d'outliers pour la chlorophylle s'explique par la nature très variable de cette mesure, qui peut présenter des pics importants lors de blooms algaux (comme nous l'avions vu dans un TP précédant).
+
+Au total, 477 valeurs ont été remplacées par des valeurs manquantes et seront imputées lors de la prochaine étape.
+
+Pour mieux observer l'effet du traitement des outliers, nous allons comparer les données de chlorophylle avant et après nettoyage. Cette visualisation nous permettra de vérifier que les valeurs aberrantes ont bien été identifiées et remplacées.
+
+```{julia}
+
+# Comparaison avant/après traitement des outliers pour la chlorophylle
+
+p = plot(title="Chlorophylle totale - Comparaison avant/après traitement", 
+         xlabel="Date", ylabel="Chlorophylle (µg/L)", 
+         legend=:topright, size=(800, 500), left_margin=5Plots.mm)
+
+# Toutes les données avant (sans filtrer par palier)
+plot!(p, data_agg.DATE, data_agg.Chltot, 
+      label="Avant traitement", 
+      color=:"#6495ED", 
+      linewidth=1.5, 
+      alpha=0.6)
+
+# Toutes les données après
+plot!(p, data_clean.DATE, data_clean.Chltot, 
+      label="Après traitement", 
+      color=:"#FF1493", 
+      linewidth=1.5, 
+      alpha=0.6)
+
+display(p)
+
+```
+
+Ce graphique montre l'impact du traitement des outliers sur les données de chlorophylle. Nous observons que les valeurs négatives (visibles en bleu sous l'axe des x) ont bien été supprimées. Les données après traitement (en rose) conservent pratiquement toutes les variations naturelles, y compris les blooms algaux importants. Cependant, elles suppriment bien les pics élevés, comme celui à 400.
+
+Le choix du seuil du Z-score nous a posé quelques problèmes. Nous avons commencé avec un seuil à 3 mais celui-ci était beaucoup trop strict et ne conservait presque aucune variation. Nous avons ensuite testé un seuil à 6 puis à 10 (qui supprimaient environ respectivement 2000 et 1000 mesures) mais ceux-ci ne conservaient pas les valeurs situées après la zone importante de valeurs manquantes. Or, ces valeurs ne nous semblent pas aberrantes mais semblent plutôt correspondre à une augmentation naturelle et réelle de la chlorophylle totale au printemps. Le choix de 15 nous a donc semblé représenter un compromis entre la détection des vraies anomalies et la préservation des variations naturelles élevées mais réelles. Ce choix permet de conserver quasiment toutes les variations écologiquement plausibles, même les plus extrêmes, tout en éliminant uniquement les valeurs les plus aberrantes détectées par les seuils physiques (valeurs négatives et pics extrêmes). Cette approche prudente limite le risque de supprimer des événements naturels importants.
+
+Au total, 402 outliers ont été détectés par le Z-score robuste et 75 valeurs négatives de chlorophylle ont été corrigées par les seuils physiques. Ces 477 valeurs aberrantes ont été remplacées par des valeurs manquantes et seront imputées lors de la prochaine étape.
+
 # Imputation des données manquantes
 
+***
 
+# Conclusion 
 
-
+***
 
 
 
