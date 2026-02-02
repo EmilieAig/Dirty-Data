@@ -387,11 +387,9 @@ Au total, 402 outliers ont été détectés par le Z-score robuste et 75 valeurs
 
 ***
 
-Maintenant que nous avons traité les valeurs aberrantes, nous devons imputer les valeurs manquantes créées lors du nettoyage des outliers. Nous avons remplacé 477 valeurs aberrantes par des valeurs manquantes, principalement pour la chlorophylle totale. Ces gaps sont généralement de petite taille (quelques valeurs isolées), ce qui rend l'interpolation particulièrement appropriée.
+Maintenant que nous avons traité les valeurs aberrantes, nous devons imputer les valeurs manquantes créées lors du nettoyage des outliers ainsi que celles déjà présentes dans les données brutes. Comme mentionné précédemment, nous ne chercherons pas à imputer les longues périodes sans données (comme celle de fin 2020 à mars 2021), car interpoler sur plusieurs mois introduirait trop d'incertitude et de biais dans nos analyses.
 
-Pour imputer ces valeurs manquantes, nous allons adopter une approche en deux étapes qui respecte la stratification verticale du lac. Premièrement, nous effectuerons une interpolation linéaire pour chaque palier séparément, ce qui permet de combler les petits gaps en s'appuyant sur les valeurs temporellement adjacentes au sein du même palier. Deuxièmement, si certaines valeurs manquent encore après l'interpolation (notamment en début ou fin de série), nous utiliserons la médiane du palier correspondant comme valeur de remplacement. Cette approche hybride garantit que chaque palier conserve ses caractéristiques propres tout en préservant les tendances temporelles des données.
-
-Il est important de noter que nous ne chercherons pas à imputer les longues périodes sans données (comme celle de fin 2020 à mars 2021), car interpoler sur plusieurs mois introduirait trop d'incertitude et de biais dans nos analyses. Notre objectif est uniquement de combler les gaps créés par le nettoyage des outliers.
+Pour imputer ces valeurs manquantes, nous allons adopter une approche en deux étapes qui respecte les paliers du lac. Premièrement, nous effectuerons une interpolation linéaire pour chaque palier séparément, ce qui permet de combler les petits gaps en s'appuyant sur les valeurs temporellement adjacentes au sein du même palier. Deuxièmement, si certaines valeurs manquent encore après l'interpolation (notamment en début ou fin de série), nous utiliserons la médiane du palier correspondant comme valeur de remplacement. Cette approche hybride garantit que chaque palier conserve ses caractéristiques propres tout en préservant les tendances temporelles des données.
 
 ```{julia}
 
@@ -405,7 +403,7 @@ println("  Chlorophylle : ", sum(ismissing, data_clean.Chltot))
 println()
 
 # Fonction d'interpolation linéaire avec limite de gap
-function interpolate_linear(values, max_gap=100)
+function interpolate_linear(values, max_gap=48)
     n = length(values)
     result = copy(values)
     
@@ -486,7 +484,9 @@ println("  Chlorophylle : ", sum(ismissing, data_clean.Chltot))
 
 ```
 
-Nous observons que l'imputation a été réalisée avec succès. Les 477 valeurs manquantes créées lors du nettoyage des outliers ont été imputées, principalement pour la chlorophylle totale (environ 400 valeurs) et réparties sur l'ensemble des paliers. L'interpolation linéaire a permis de combler ces gaps en préservant les tendances temporelles au sein de chaque palier.
+Nous observons que l'imputation a été réalisée avec succès. Au total, 1528 valeurs de chlorophylle manquantes ont été imputées, ainsi que 13 valeurs de température et 13 valeurs de saturation en oxygène. La majorité des valeurs imputées concernent la chlorophylle (environ 300 valeurs par palier), ce qui est cohérent avec le nettoyage des outliers effectué précédemment et les données manquantes déjà présentes dans le jeu de données initial.
+
+L'interpolation linéaire a permis de combler ces gaps en préservant les tendances temporelles au sein de chaque palier. Pour les valeurs qui ne pouvaient pas être interpolées (en début ou fin de série, ou pour des gaps trop importants), la médiane du palier a été utilisée comme valeur de remplacement.
 
 Il est important de noter que nous conservons encore des valeurs manquantes dans notre jeu de données, notamment pour les longues périodes sans acquisition de données. Ces valeurs manquantes ne seront pas imputées car elles correspondent à des interruptions prolongées des mesures, et toute tentative d'imputation sur ces périodes introduirait trop d'incertitude dans les analyses.
 
@@ -498,7 +498,7 @@ Pour visualiser l'effet de l'imputation, nous allons comparer les données de ch
 
 p = plot(title="Chlorophylle totale - Comparaison avant/après traitement complet", 
          xlabel="Date", ylabel="Chlorophylle (µg/L)", 
-         legend=:topright, size=(900, 500), left_margin=5Plots.mm)
+         legend=:topright, size=(800, 500), left_margin=5Plots.mm)
 
 # Filtrer les valeurs non manquantes pour chaque série
 dates_agg = [data_agg.DATE[i] for i in 1:nrow(data_agg) if !ismissing(data_agg.Chltot[i])]
@@ -537,5 +537,8 @@ Les données finales conservent toutes les variations naturelles importantes, y 
 
 ***
 
+Ce travail nous a permis de mettre en œuvre une chaîne complète de traitement de données sur une période d'environ 2 ans. En partant de 91 698 observations brutes, nous avons successivement réalisé une agrégation temporelle par blocs de 1h15 (réduction de 66% du volume de données), un nettoyage de 477 valeurs aberrantes (principalement sur la chlorophylle avec des valeurs négatives et des pics extrêmes), et une imputation sélective par interpolation linéaire limitée à des gaps de moins de 48 heures. Au total, 13 valeurs de température, 13 valeurs de saturation en oxygène et 1394 valeurs de chlorophylle ont été imputées, réparties sur l'ensemble des paliers de profondeur.
 
+Notre approche méthodologique a privilégié la prudence statistique en conservant volontairement les longues périodes sans données plutôt que de les imputer artificiellement, ce qui aurait introduit trop d'incertitude dans nos analyses. Ainsi, 134 valeurs de chlorophylle restent manquantes dans le jeu de données final, correspondant principalement aux longues interruptions d'acquisition. 
 
+Les visualisations produites ont révélé des dynamiques intéressantes, notamment une homogénéité de la température sur toute la colonne d'eau, une stratification marquée de l'oxygène avec des phénomènes de sursaturation en surface et de désoxygénation en profondeur, ainsi qu'une forte variabilité de la chlorophylle totale témoignant de l'activité du lac.
