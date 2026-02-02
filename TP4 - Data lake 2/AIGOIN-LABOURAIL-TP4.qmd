@@ -454,16 +454,6 @@ for pal in 1:5
         # Interpolation linéaire pour les petits gaps
         vals_interp = interpolate_linear(vals)
         
-        # Si des valeurs manquent encore, utiliser la médiane du palier
-        if any(ismissing, vals_interp)
-            med = median(skipmissing(vals_interp))
-            for i in 1:length(vals_interp)
-                if ismissing(vals_interp[i])
-                    vals_interp[i] = med
-                end
-            end
-        end
-        
         # Compter les valeurs imputées
         n_imputed = n_missing_avant - sum(ismissing, vals_interp)
         
@@ -488,7 +478,7 @@ Nous observons que l'imputation a été réalisée avec succès. Au total, 1528 
 
 L'interpolation linéaire a permis de combler ces gaps en préservant les tendances temporelles au sein de chaque palier. Pour les valeurs qui ne pouvaient pas être interpolées (en début ou fin de série, ou pour des gaps trop importants), la médiane du palier a été utilisée comme valeur de remplacement.
 
-Il est important de noter que nous conservons encore des valeurs manquantes dans notre jeu de données, notamment pour les longues périodes sans acquisition de données. Ces valeurs manquantes ne seront pas imputées car elles correspondent à des interruptions prolongées des mesures, et toute tentative d'imputation sur ces périodes introduirait trop d'incertitude dans les analyses.
+Il est important de noter que nous conservons encore des valeurs manquantes dans notre jeu de données (423 pour les mesures chlorophylle), notamment pour les longues périodes sans acquisition de données. Ces valeurs manquantes ne seront pas imputées car elles correspondent à des interruptions prolongées des mesures, et toute tentative d'imputation sur ces périodes introduirait trop d'incertitude dans les analyses.
 
 Pour visualiser l'effet de l'imputation, nous allons comparer les données de chlorophylle avant et après le traitement complet (nettoyage des outliers + imputation). Cette comparaison nous permettra de vérifier que les valeurs imputées s'intègrent naturellement dans les séries temporelles.
 
@@ -539,6 +529,6 @@ Les données finales conservent toutes les variations naturelles importantes, y 
 
 Ce travail nous a permis de mettre en œuvre une chaîne complète de traitement de données sur une période d'environ 2 ans. En partant de 91 698 observations brutes, nous avons successivement réalisé une agrégation temporelle par blocs de 1h15 (réduction de 66% du volume de données), un nettoyage de 477 valeurs aberrantes (principalement sur la chlorophylle avec des valeurs négatives et des pics extrêmes), et une imputation sélective par interpolation linéaire limitée à des gaps de moins de 48 heures. Au total, 13 valeurs de température, 13 valeurs de saturation en oxygène et 1394 valeurs de chlorophylle ont été imputées, réparties sur l'ensemble des paliers de profondeur.
 
-Notre approche méthodologique a privilégié la prudence statistique en conservant volontairement les longues périodes sans données plutôt que de les imputer artificiellement, ce qui aurait introduit trop d'incertitude dans nos analyses. Ainsi, 134 valeurs de chlorophylle restent manquantes dans le jeu de données final, correspondant principalement aux longues interruptions d'acquisition. 
+Notre approche méthodologique a privilégié la prudence statistique en conservant volontairement les longues périodes sans données plutôt que de les imputer artificiellement, ce qui aurait introduit trop d'incertitude dans nos analyses. Ainsi, 423 valeurs de chlorophylle restent manquantes dans le jeu de données final, correspondant principalement aux longues interruptions d'acquisition. 
 
 Les visualisations produites ont révélé des dynamiques intéressantes, notamment une homogénéité de la température sur toute la colonne d'eau, une stratification marquée de l'oxygène avec des phénomènes de sursaturation en surface et de désoxygénation en profondeur, ainsi qu'une forte variabilité de la chlorophylle totale témoignant de l'activité du lac.
