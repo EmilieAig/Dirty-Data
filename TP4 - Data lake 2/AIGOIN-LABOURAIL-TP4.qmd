@@ -161,7 +161,7 @@ La saturation en oxygène (courbe bleu claire) présente une forte variabilité 
 
 La chlorophylle totale (courbe bleu foncée) montre également une forte variabilité. Nous observons cependant des valeurs négatives, notamment au début des mesures, ce qui est physiquement impossible pour une concentration de chlorophylle. Ces valeurs témoignent d'erreurs de mesure ou de dysfonctionnements des capteurs et devront être traitées comme des outliers à supprimer ou corriger.
 
-Enfin, la variable palier de profondeur (courbe rose) reste relativement stable avec des mesures effectuées principalement à chaque fois aux paliers de 1 (surface) à 5 (fond), avec quelques mesures qui n'ont pas été prises à tout les niveaux.
+Enfin, la variable palier de profondeur (courbe rose) reste relativement stable avec des mesures effectuées principalement à chaque fois aux paliers de 1 (surface) à 5 (fond), avec quelques mesures qui n'ont pas été prises à tous les niveaux.
 
 Avant de procéder au nettoyage et à la transformation de nos données, il est essentiel de définir l'ordre des opérations à effectuer. En effet, l'ordre dans lequel nous appliquons les différents traitements peut avoir un impact important sur la qualité finale de nos données. Nous procéderons dans l'ordre suivant : regroupement par blocs de temps de 1h15, traitement des outliers, et imputation des données manquantes. Cette logique se justifie par plusieurs raisons. Tout d'abord, le regroupement temporel permet de réduire la granularité des données et de diminuer le volume à traiter, ce qui facilitera les étapes suivantes. De plus, l'agrégation par blocs de temps peut naturellement atténuer certains outliers ponctuels grâce aux calculs de moyennes. Ensuite, il est préférable de traiter les outliers avant l'imputation car ces valeurs aberrantes pourraient fausser les méthodes d'interpolation et propager des erreurs dans les données imputées. Enfin, une fois les données agrégées et nettoyées des valeurs aberrantes, nous pourrons procéder à l'imputation des valeurs manquantes de manière plus fiable, en nous basant sur des données déjà cohérentes et représentatives de la dynamique réelle du lac.
 
@@ -275,7 +275,7 @@ Maintenant que nos données sont agrégées, nous allons procéder au traitement
 
 Pour identifier ces valeurs aberrantes, nous allons combiner deux approches complémentaires. D'abord, nous appliquerons des seuils physiques : la chlorophylle ne peut pas être négative. Ensuite, nous utiliserons un Z-score robuste basé sur la médiane plutôt que sur la moyenne, car cette méthode est moins sensible aux outliers eux-mêmes. Pour chaque variable et chaque palier, nous calculerons le Z-score robuste défini par :
 
-$$ Z_i = \frac{X_i - \text{median}(X)}{\text{MAD}} $$
+$$ Z_i = \frac{X_i - \text{mediane}(X)}{\text{MAD}} $$
 
 où MAD (Median Absolute Deviation) est un estimateur d'échelle robuste calculé comme la médiane des écarts absolus à la médiane. Les valeurs dont le Z-score robuste dépasse un seuil seront considérées comme des outliers.
 
@@ -345,7 +345,7 @@ println("\nOutliers par Z-score robuste : $n_outliers_zscore")
 
 Nous observons que le traitement des outliers a permis d'identifier et de corriger un nombre important de valeurs aberrantes. Au total, 75 valeurs de chlorophylle négatives ont été détectées et remplacées, confirmant les dysfonctionnements de capteurs observés lors de la visualisation initiale.
 
-La détection par Z-score robuste a identifié 402 outliers supplémentaires sur un total d'environ 30 600 observations, soit environ 12% des données. Tous ces outliers concernent la chlorophylle, avec environ 400 valeurs aberrantes réparties sur l'ensemble des paliers. Cette forte proportion d'outliers pour la chlorophylle s'explique par la nature très variable de cette mesure, qui peut présenter des pics importants lors de blooms algaux (comme nous l'avions vu dans un TP précédant).
+La détection par Z-score robuste a identifié 402 outliers supplémentaires sur un total d'environ 30 600 observations, soit environ 12% des données. Tous ces outliers concernent la chlorophylle, avec environ 400 valeurs aberrantes réparties sur l'ensemble des paliers. Cette forte proportion d'outliers pour la chlorophylle s'explique par la nature très variable de cette mesure, qui peut présenter des pics importants lors de blooms algaux (comme nous l'avions vu dans un TP précédent).
 
 Au total, 477 valeurs ont été remplacées par des valeurs manquantes et seront imputées lors de la prochaine étape.
 
@@ -377,7 +377,7 @@ display(p)
 
 ```
 
-Ce graphique montre l'impact du traitement des outliers sur les données de chlorophylle. Nous observons que les valeurs négatives (visibles en bleu sous l'axe des x) ont bien été supprimées. Les données après traitement (en rose) conservent pratiquement toutes les variations naturelles, y compris les blooms algaux importants. Cependant, elles suppriment bien les pics élevés, comme celui à 400.
+Ce graphique montre l'impact du traitement des outliers sur les données de chlorophylle. Nous observons que les valeurs négatives (visibles en bleu sous l'axe des x) ont bien été supprimées. Les données après traitement (en rose) conservent pratiquement toutes les variations naturelles. Cependant, elles suppriment bien les pics élevés, comme celui à 400.
 
 Le choix du seuil du Z-score nous a posé quelques problèmes. Nous avons commencé avec un seuil à 3 mais celui-ci était beaucoup trop strict et ne conservait presque aucune variation. Nous avons ensuite testé un seuil à 6 puis à 10 (qui supprimaient environ respectivement 2000 et 1000 mesures) mais ceux-ci ne conservaient pas les valeurs situées après la zone importante de valeurs manquantes. Or, ces valeurs ne nous semblent pas aberrantes mais semblent plutôt correspondre à une augmentation naturelle et réelle de la chlorophylle totale au printemps. Le choix de 15 nous a donc semblé représenter un compromis entre la détection des vraies anomalies et la préservation des variations naturelles élevées mais réelles. Ce choix permet de conserver quasiment toutes les variations écologiquement plausibles, même les plus extrêmes, tout en éliminant uniquement les valeurs les plus aberrantes détectées par les seuils physiques (valeurs négatives et pics extrêmes). Cette approche prudente limite le risque de supprimer des événements naturels importants.
 
@@ -403,7 +403,7 @@ println("  Chlorophylle : ", sum(ismissing, data_clean.Chltot))
 println()
 
 # Fonction d'interpolation linéaire avec limite de gap
-function interpolate_linear(values, max_gap=48)
+function interpolate_linear(values, max_gap=10)
     n = length(values)
     result = copy(values)
     
@@ -531,7 +531,7 @@ Ce graphique final illustre l'ensemble du traitement appliqué à nos données d
 
 Les valeurs négatives visibles au début de la série (début 2020) ont été supprimées, ainsi que les pics extrêmes physiquement impossibles (notamment le pic à ~400 µg/L). Ces anomalies provenaient vraisemblablement de dysfonctionnements de capteurs. Les petits gaps créés par la suppression de ces outliers (généralement quelques heures à quelques jours) ont été comblés par interpolation linéaire, une approche qui préserve les tendances temporelles sans introduire de ruptures artificielles. En revanche, les longues périodes sans données (notamment fin 2020 - début 2021) n'ont volontairement pas été imputées car interpoler sur plusieurs mois introduirait des données artificielles sans fondement scientifique et pourrait biaiser les analyses ultérieures. Cette décision méthodologique garantit l'intégrité statistique du jeu de données.
 
-Les données finales conservent toutes les variations naturelles importantes, y compris pics de chlorophylle en 2021, tout en éliminant uniquement les anomalies instrumentales avérées. Cette stratégie d'imputation sélective, combinant interpolation linéaire pour les petits gaps et imputation par médiane par palier pour les valeurs isolées, s'est révélée efficace pour améliorer la qualité des données tout en respectant la structure verticale du lac et les dynamiques écologiques réelles.
+Les données finales conservent toutes les variations naturelles importantes, y compris pics de chlorophylle en 2021, tout en éliminant uniquement les anomalies instrumentales. Cette stratégie d'imputation sélective, combinant interpolation linéaire pour les petits gaps et imputation par médiane par palier pour les valeurs isolées, s'est révélée plutôt efficace pour améliorer la qualité des données tout en respectant la structure verticale du lac et les dynamiques écologiques réelles.
 
 # Conclusion 
 
