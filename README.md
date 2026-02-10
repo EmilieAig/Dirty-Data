@@ -132,10 +132,17 @@ Analyse et prédiction du taux d'ozone à partir de données météorologiques. 
 │   ├── SSD.png                          # Logo SSD
 │   └── Univ_Mtp.png                     # Logo Université de Montpellier
 |
+├── TP4 - Data lake 2/
+│   ├── data_lake_2.csv                 # Données du lac
+│   ├── AIGOIN-LABOURAIL-TP4.qmd        # Rapport Quarto
+│   ├── AIGOIN-LABOURAIL-TP4.html       # Rapport HTML
+│   ├── SSD.png                          # Logo SSD
+│   └── Univ_Mtp.png                     # Logo Université de Montpellier
+|
 └── README.md                            # Ce fichier
 ```
 
-## Installation et utilisation
+## Installation et utilisation 
 
 ### Prérequis
 
